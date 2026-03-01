@@ -58,6 +58,9 @@ def _extract_json(text: str) -> dict | None:
     """Try multiple strategies to extract JSON from text."""
     text = text.strip()
 
+    # Strip DeepSeek reasoning tags if present
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
     # Strategy 1: Direct parse
     try:
         return json.loads(text)
