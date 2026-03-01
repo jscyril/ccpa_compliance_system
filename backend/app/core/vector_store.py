@@ -72,6 +72,21 @@ class VectorStore:
             self._built = True
             return
 
+        # Deduplicate by ID (ChromaDB requires unique IDs)
+        seen_ids = set()
+        unique_subsections = []
+        for sub in subsections:
+            if sub["id"] not in seen_ids:
+                seen_ids.add(sub["id"])
+                unique_subsections.append(sub)
+
+        if len(unique_subsections) < len(subsections):
+            logger.warning(
+                f"Removed {len(subsections) - len(unique_subsections)} "
+                f"duplicate subsection IDs"
+            )
+        subsections = unique_subsections
+
         # Prepare documents for embedding
         texts = [sub["text"] for sub in subsections]
         ids = [sub["id"] for sub in subsections]
