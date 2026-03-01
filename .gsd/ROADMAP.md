@@ -26,7 +26,7 @@
 - Add `PyMuPDF`, `chromadb`, `sentence-transformers` to `requirements.txt`
 
 ### Phase 2: LLM Engine & RAG Pipeline
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Wire up quantized LLM, vector search, prompt engineering, and strict JSON parsing.
 **Requirements**: REQ-02, REQ-03, REQ-04, REQ-09, REQ-10
 **Key Tasks**:
