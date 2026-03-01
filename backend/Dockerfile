@@ -1,8 +1,16 @@
-FROM python:3.11-slim
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
-# System dependencies
+# Prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python 3.11 and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
     build-essential \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
