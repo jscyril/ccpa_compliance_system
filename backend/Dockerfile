@@ -27,7 +27,7 @@ ENV HF_TOKEN=${HF_TOKEN}
 
 # Pre-download LLM model weights and tokenizer during build
 RUN if [ -n "$HF_TOKEN" ]; then \
-    python -c "from huggingface_hub import snapshot_download; snapshot_download('deepseek-ai/DeepSeek-R1-Distill-Llama-8B', token='${HF_TOKEN}', ignore_patterns=['*.msgpack', '*.h5', '*.ot', '*.onnx'])"; \
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('microsoft/Phi-4-mini-reasoning', token='${HF_TOKEN}', ignore_patterns=['*.msgpack', '*.h5', '*.ot', '*.onnx'])"; \
     fi
 
 # Copy startup script

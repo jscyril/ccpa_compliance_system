@@ -4,7 +4,7 @@ LLM Engine
 Loads and manages an LLM for CCPA compliance analysis.
 Supports CUDA (4-bit quantized), MPS (Apple Silicon), and CPU modes.
 
-Model priority: DeepSeek R1 8B → Qwen 2.5 3B (fallback)
+Model priority: Phi-4-mini-reasoning 3.8B → Qwen 2.5 3B (fallback)
 
 The model is loaded lazily via load() — called during FastAPI startup,
 not at import time.
@@ -23,8 +23,8 @@ from transformers import (
 
 logger = logging.getLogger(__name__)
 
-# Model priority: 8B fits in 24GB RAM only if loaded in float16
-PRIMARY_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+# Model priority: 3.8B Phi-4 fits easily in 24GB RAM
+PRIMARY_MODEL = "microsoft/Phi-4-mini-reasoning"
 FALLBACK_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 
 
@@ -76,7 +76,8 @@ class LLMEngine:
             strategies.append(("4-bit quantized (GPU)", self._load_quantized))
             strategies.append(("float16 (GPU)", self._load_float16_gpu))
         if has_mps:
-            strategies.append(("float16 (MPS/Apple Silicon)", self._load_float16_mps))
+            # 3.8B in float32 = ~8GB, fits easily in 24GB unified RAM
+            strategies.append(("float32 (MPS/Apple Silicon)", self._load_float32_mps))
         strategies.append(("float16 (CPU)", self._load_float16_cpu))
 
         for strategy_name, load_fn in strategies:
@@ -145,14 +146,14 @@ class LLMEngine:
             trust_remote_code=True,
         )
 
-    def _load_float16_mps(self, model_id: str, hf_token: Optional[str]) -> None:
-        """Strategy: float16 on Apple Silicon MPS (Metal)."""
+    def _load_float32_mps(self, model_id: str, hf_token: Optional[str]) -> None:
+        """Strategy: float32 on Apple Silicon MPS (Metal)."""
         self._load_tokenizer(model_id, hf_token)
-        # 8B in float32 = 32GB (OOMs Mac). Must use float16 (~16GB). 
-        # Greedy decoding prevents the NaN errors common with float16 MPS.
+        # 3.8B in float32 = ~8GB. Fits easily in 24GB unified RAM.
+        # float32 avoids NaN issues seen with float16 on MPS.
         self._model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            torch_dtype=torch.float16,
+            torch_dtype=torch.float32,
             device_map="cpu",
             token=hf_token,
             trust_remote_code=True,
