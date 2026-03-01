@@ -1,9 +1,10 @@
 """
 LLM Engine
 
-Loads and manages a quantized LLM (Llama 3.1 8B Instruct or Mistral 7B fallback)
-for CCPA compliance analysis. Uses bitsandbytes 4-bit quantization to fit
-within consumer GPU VRAM.
+Loads and manages an LLM for CCPA compliance analysis.
+Supports CUDA (4-bit quantized), MPS (Apple Silicon), and CPU modes.
+
+Model priority: Llama 3.2 3B → Qwen 2.5 3B (fallback)
 
 The model is loaded lazily via load() — called during FastAPI startup,
 not at import time.
@@ -22,9 +23,9 @@ from transformers import (
 
 logger = logging.getLogger(__name__)
 
-# Model priority: try Llama first, fall back to Mistral
-PRIMARY_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
-FALLBACK_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
+# Model priority: 3B models fit in 24GB RAM
+PRIMARY_MODEL = "meta-llama/Llama-3.2-3B-Instruct"
+FALLBACK_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 
 
 class LLMEngine:

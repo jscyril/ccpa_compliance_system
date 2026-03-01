@@ -27,7 +27,7 @@ ENV HF_TOKEN=${HF_TOKEN}
 
 # Pre-download LLM tokenizer during build (model weights downloaded at runtime)
 RUN if [ -n "$HF_TOKEN" ]; then \
-    python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('meta-llama/Llama-3.1-8B-Instruct', token='${HF_TOKEN}')"; \
+    python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('meta-llama/Llama-3.2-3B-Instruct', token='${HF_TOKEN}')"; \
     fi
 
 # Copy startup script
