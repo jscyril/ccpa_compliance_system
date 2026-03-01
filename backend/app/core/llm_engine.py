@@ -204,9 +204,7 @@ class LLMEngine:
             outputs = self._model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                do_sample=True,
-                top_p=0.9,
+                do_sample=False,
                 pad_token_id=self._tokenizer.pad_token_id,
             )
 
