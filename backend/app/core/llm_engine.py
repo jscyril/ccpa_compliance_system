@@ -76,7 +76,7 @@ class LLMEngine:
             strategies.append(("4-bit quantized (GPU)", self._load_quantized))
             strategies.append(("float16 (GPU)", self._load_float16_gpu))
         if has_mps:
-            strategies.append(("float16 (MPS/Apple Silicon)", self._load_float16_mps))
+            strategies.append(("float32 (MPS/Apple Silicon)", self._load_float32_mps))
         strategies.append(("float16 (CPU)", self._load_float16_cpu))
 
         for strategy_name, load_fn in strategies:
@@ -145,13 +145,13 @@ class LLMEngine:
             trust_remote_code=True,
         )
 
-    def _load_float16_mps(self, model_id: str, hf_token: Optional[str]) -> None:
-        """Strategy: float16 on Apple Silicon MPS (Metal)."""
+    def _load_float32_mps(self, model_id: str, hf_token: Optional[str]) -> None:
+        """Strategy: float32 on Apple Silicon MPS (Metal)."""
         self._load_tokenizer(model_id, hf_token)
-        # Load to CPU first, then move to MPS (device_map doesn't support MPS)
+        # float32 avoids NaN issues with float16 on MPS
         self._model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            torch_dtype=torch.float16,
+            torch_dtype=torch.float32,
             device_map="cpu",
             token=hf_token,
             trust_remote_code=True,

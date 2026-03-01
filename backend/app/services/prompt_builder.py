@@ -94,13 +94,17 @@ class PromptBuilder:
         # Build the user message with context and query
         user_content = ""
 
-        # Add retrieved CCPA sections as context
+        # Add retrieved CCPA sections as context (truncated to fit context window)
+        MAX_SECTION_CHARS = 2000
+        MAX_SECTIONS = 3
         if context_sections:
             user_content += "Relevant CCPA Statute Sections:\n\n"
-            for section in context_sections:
+            for section in context_sections[:MAX_SECTIONS]:
                 sid = section.get("section_id", "Unknown")
                 title = section.get("title", "")
                 text = section.get("full_text", "")
+                if len(text) > MAX_SECTION_CHARS:
+                    text = text[:MAX_SECTION_CHARS] + "... [truncated]"
                 user_content += f"--- Section {sid}: {title} ---\n"
                 user_content += f"{text}\n\n"
 
