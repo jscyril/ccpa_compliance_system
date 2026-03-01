@@ -47,7 +47,7 @@
 - Error handler: exceptions → `{"harmful": false, "articles": []}`
 
 ### Phase 4: Docker & Deployment
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Containerize and validate against all 10 test cases.
 **Requirements**: REQ-07, REQ-08
 **Key Tasks**:
