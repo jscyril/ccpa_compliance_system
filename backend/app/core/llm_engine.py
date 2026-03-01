@@ -57,7 +57,8 @@ class LLMEngine:
             )
 
         has_cuda = torch.cuda.is_available()
-        logger.info(f"CUDA available: {has_cuda}")
+        has_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+        logger.info(f"CUDA available: {has_cuda}, MPS available: {has_mps}")
         if has_cuda:
             logger.info(
                 f"GPU: {torch.cuda.get_device_name(0)}, "
@@ -73,6 +74,8 @@ class LLMEngine:
         if has_cuda:
             strategies.append(("4-bit quantized (GPU)", self._load_quantized))
             strategies.append(("float16 (GPU)", self._load_float16_gpu))
+        if has_mps:
+            strategies.append(("float16 (MPS/Apple Silicon)", self._load_float16_mps))
         strategies.append(("float16 (CPU)", self._load_float16_cpu))
 
         for strategy_name, load_fn in strategies:
@@ -141,8 +144,22 @@ class LLMEngine:
             trust_remote_code=True,
         )
 
+    def _load_float16_mps(self, model_id: str, hf_token: Optional[str]) -> None:
+        """Strategy: float16 on Apple Silicon MPS (Metal)."""
+        self._load_tokenizer(model_id, hf_token)
+        # Load to CPU first, then move to MPS (device_map doesn't support MPS)
+        self._model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.float16,
+            device_map="cpu",
+            token=hf_token,
+            trust_remote_code=True,
+            low_cpu_mem_usage=True,
+        )
+        self._model = self._model.to("mps")
+
     def _load_float16_cpu(self, model_id: str, hf_token: Optional[str]) -> None:
-        """Strategy 3: float16 on CPU (no GPU required)."""
+        """Strategy: float16 on CPU (no GPU required)."""
         self._load_tokenizer(model_id, hf_token)
         self._model = AutoModelForCausalLM.from_pretrained(
             model_id,
