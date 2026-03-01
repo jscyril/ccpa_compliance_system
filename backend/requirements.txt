@@ -1,7 +1,7 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 torch>=2.2
-transformers>=4.30
+transformers>=4.51.3
 chromadb>=0.5
 sentence-transformers>=2.7
 bitsandbytes>=0.43
