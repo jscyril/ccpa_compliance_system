@@ -43,10 +43,12 @@ class LLMEngine:
 
     def load(self) -> None:
         """
-        Load the model with 4-bit quantization.
+        Load the model, trying multiple strategies:
+        1. 4-bit quantized on CUDA GPU (fastest, lowest VRAM)
+        2. float16 on GPU without quantization
+        3. float16 on CPU (slowest, needs ~16GB RAM, but always works)
 
-        Tries the primary model first; if it fails (e.g., gated model,
-        insufficient VRAM), falls back to the secondary model.
+        For each strategy, tries primary model then fallback model.
         """
         hf_token = os.environ.get("HF_TOKEN")
         if not hf_token:
@@ -54,58 +56,101 @@ class LLMEngine:
                 "HF_TOKEN not set. Some models may not be accessible."
             )
 
-        # 4-bit quantization config
+        has_cuda = torch.cuda.is_available()
+        logger.info(f"CUDA available: {has_cuda}")
+        if has_cuda:
+            logger.info(
+                f"GPU: {torch.cuda.get_device_name(0)}, "
+                f"VRAM: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f}GB"
+            )
+
+        models_to_try = [self.model_name]
+        if self.model_name == PRIMARY_MODEL:
+            models_to_try.append(FALLBACK_MODEL)
+
+        # Build loading strategies in priority order
+        strategies = []
+        if has_cuda:
+            strategies.append(("4-bit quantized (GPU)", self._load_quantized))
+            strategies.append(("float16 (GPU)", self._load_float16_gpu))
+        strategies.append(("float16 (CPU)", self._load_float16_cpu))
+
+        for strategy_name, load_fn in strategies:
+            for model_id in models_to_try:
+                try:
+                    logger.info(
+                        f"Trying: {model_id} — {strategy_name}"
+                    )
+                    load_fn(model_id, hf_token)
+                    self.model_name = model_id
+                    self._device = next(self._model.parameters()).device
+                    logger.info(
+                        f"Model loaded successfully: {model_id} "
+                        f"via {strategy_name} on device: {self._device}"
+                    )
+                    return
+
+                except Exception as e:
+                    logger.warning(
+                        f"Failed [{strategy_name}] {model_id}: {e}"
+                    )
+                    self._model = None
+                    self._tokenizer = None
+                    continue
+
+        raise RuntimeError(
+            f"Failed to load any model with any strategy. "
+            f"Tried: {models_to_try}. Check HF_TOKEN and available memory."
+        )
+
+    def _load_tokenizer(self, model_id: str, hf_token: Optional[str]) -> None:
+        """Load tokenizer for a model."""
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            model_id,
+            token=hf_token,
+            trust_remote_code=True,
+        )
+        if self._tokenizer.pad_token is None:
+            self._tokenizer.pad_token = self._tokenizer.eos_token
+
+    def _load_quantized(self, model_id: str, hf_token: Optional[str]) -> None:
+        """Strategy 1: 4-bit quantized on CUDA GPU."""
+        self._load_tokenizer(model_id, hf_token)
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
         )
+        self._model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            quantization_config=bnb_config,
+            device_map="auto",
+            token=hf_token,
+            trust_remote_code=True,
+        )
 
-        models_to_try = [self.model_name]
-        if self.model_name == PRIMARY_MODEL:
-            models_to_try.append(FALLBACK_MODEL)
+    def _load_float16_gpu(self, model_id: str, hf_token: Optional[str]) -> None:
+        """Strategy 2: float16 on GPU without quantization."""
+        self._load_tokenizer(model_id, hf_token)
+        self._model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            token=hf_token,
+            trust_remote_code=True,
+        )
 
-        for model_id in models_to_try:
-            try:
-                logger.info(f"Loading model: {model_id}")
-                self._tokenizer = AutoTokenizer.from_pretrained(
-                    model_id,
-                    token=hf_token,
-                    trust_remote_code=True,
-                )
-
-                # Ensure pad token is set
-                if self._tokenizer.pad_token is None:
-                    self._tokenizer.pad_token = self._tokenizer.eos_token
-
-                self._model = AutoModelForCausalLM.from_pretrained(
-                    model_id,
-                    quantization_config=bnb_config,
-                    device_map="auto",
-                    token=hf_token,
-                    trust_remote_code=True,
-                )
-
-                self.model_name = model_id
-                self._device = next(self._model.parameters()).device
-                logger.info(
-                    f"Model loaded successfully: {model_id} "
-                    f"on device: {self._device}"
-                )
-                return
-
-            except Exception as e:
-                logger.error(f"Failed to load {model_id}: {e}")
-                self._model = None
-                self._tokenizer = None
-                if model_id != models_to_try[-1]:
-                    logger.info("Trying fallback model...")
-                continue
-
-        raise RuntimeError(
-            f"Failed to load any model. Tried: {models_to_try}. "
-            "Check HF_TOKEN and GPU availability."
+    def _load_float16_cpu(self, model_id: str, hf_token: Optional[str]) -> None:
+        """Strategy 3: float16 on CPU (no GPU required)."""
+        self._load_tokenizer(model_id, hf_token)
+        self._model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.float16,
+            device_map="cpu",
+            token=hf_token,
+            trust_remote_code=True,
+            low_cpu_mem_usage=True,
         )
 
     def generate(
