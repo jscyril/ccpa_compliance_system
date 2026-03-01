@@ -1,60 +1,166 @@
 # Intelligent CCPA Compliance Analyzer
 
-An automated system that reads a description of a company's data handling behavior, reasons over the California Consumer Privacy Act (CCPA) statute, and instantly flags potential violations along with specific statute sections.
-
 ## Solution Overview
 
-This system utilizes a **Retrieval-Augmented Generation (RAG)** architecture to overcome the token limits and reasoning constraints of smaller LLMs. 
+This system uses a **Retrieval-Augmented Generation (RAG)** architecture to analyze business practices against the California Consumer Privacy Act (CCPA) statute and return structured JSON verdicts.
 
-1. **Knowledge Base Generation**: The raw `ccpa_statute.pdf` is pre-parsed into structured sections and subsections to preserve legal hierarchy.
-2. **Embedding & Retrieval**: A lightweight embedding model (`BAAI/bge-small-en-v1.5`) runs on the CPU. It vectorizes the CCPA subsections into a ChromaDB in-memory index. Given a user prompt, it retrieves the top functionally relevant subsections.
-3. **Prompt Construction**: The retrieved sections are truncated to fit the context window, combined with 3 few-shot examples (2 harmful, 1 safe), and formatted into a strict Llama 3.2 Instruct system prompt.
-4. **LLM Inference**: The 3B parameter `meta-llama/Llama-3.2-3B-Instruct` model analyzes the prompt and output strictly formatted JSON. Greedy decoding (`do_sample=False`) is used to mathematically guarantee deterministic, structured output and prevent numerical instability (NaN values).
-5. **Robust Parsing**: The output is parsed into a strict JSON schema. If the LLM generates trailing or conversational text, a fallback regex parser extracts the JSON. If the LLM entirely fails, a "safe by default" ADR-4 fallback returns `{"harmful": false, "articles": []}`.
+### Architecture
 
-## Docker Run Instructions
+```
+User Prompt ──► FastAPI (/analyze)
+                    │
+                    ▼
+            ┌──────────────┐
+            │ Vector Search │  ← ChromaDB (in-memory)
+            │ (bge-small)   │  ← Embeds 212 CCPA subsections
+            └──────┬───────┘
+                   │ Top-5 relevant statute sections
+                   ▼
+            ┌──────────────┐
+            │Prompt Builder │  ← System prompt + few-shot examples
+            │               │  ← Retrieved CCPA context injected
+            └──────┬───────┘
+                   │ Structured prompt
+                   ▼
+            ┌──────────────┐
+            │  LLM Engine   │  ← DeepSeek-R1-Distill-Llama-8B
+            │  (Reasoning)  │  ← Greedy decoding, max 512 tokens
+            └──────┬───────┘
+                   │ Raw text output
+                   ▼
+            ┌──────────────┐
+            │Response Parser│  ← Strips <think> tags
+            │               │  ← Extracts & validates JSON
+            │               │  ← Normalizes article format
+            └──────┬───────┘
+                   │
+                   ▼
+            {"harmful": bool, "articles": [...]}
+```
 
-To pull and run the container locally:
+### Key Components
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **LLM** | `deepseek-ai/DeepSeek-R1-Distill-Llama-8B` | Reasoning model for multi-step legal analysis. Falls back to `Qwen/Qwen2.5-3B-Instruct` if loading fails. |
+| **Embedder** | `BAAI/bge-small-en-v1.5` (CPU) | Embeds CCPA subsections into vectors for semantic retrieval. |
+| **Vector DB** | ChromaDB (in-memory) | Stores and searches 212 embedded CCPA subsections at startup. |
+| **API** | FastAPI + Uvicorn | Exposes `POST /analyze` and `GET /health` on port 8000. |
+| **Knowledge Base** | `ccpa_statute.md` → `ccpa_sections.json` | Pre-parsed, hierarchically structured CCPA statute (45 sections, 212 subsections). |
+
+### Processing Pipeline
+
+1. **Preprocessing (build-time):** The verified `ccpa_statute.md` is parsed into `ccpa_sections.json` with hierarchical section → subsection structure.
+2. **Startup:** The LLM is loaded (4-bit quantized on GPU, float16 on CPU/MPS). The embedding model indexes all 212 subsections into ChromaDB.
+3. **Inference:** For each prompt, the top-5 most relevant CCPA subsections are retrieved via semantic search, injected into a few-shot prompt, and passed to the LLM. The LLM's reasoning output is stripped of `<think>` tags and parsed into strict JSON.
+4. **Safety Fallback:** If parsing fails or the LLM is uncertain, the system returns `{"harmful": false, "articles": []}` to avoid citing incorrect articles.
+
+---
+
+## Docker Run Command
 
 ```bash
 docker run --gpus all -p 8000:8000 -e HF_TOKEN=<your_huggingface_token> yourusername/ccpa-compliance:latest
 ```
 
-*Note: The `--gpus all` flag allows the container to use an NVIDIA GPU if present. The system automatically falls back to CPU float16 if no CUDA device is detected, but CPU inference requires ~16GB of RAM allocated to Docker.*
+> **Note:** The container starts, loads the LLM, and builds the vector index during startup. The `GET /health` endpoint will return HTTP 200 once the server is fully ready. This may take up to 2–3 minutes depending on hardware.
+
+---
 
 ## Environment Variables
 
-| Variable | Description | Requirement |
-|----------|-------------|-------------|
-| `HF_TOKEN` | Hugging Face access token for gated/open models (e.g., Llama-3.2-3B). Essential for downloading model weights at startup. | Required |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `HF_TOKEN` | **Yes** | Hugging Face access token for downloading the gated DeepSeek-R1-Distill-Llama-8B model weights. Must be provided at runtime via `-e HF_TOKEN=<token>`. Never hardcoded in source code. |
 
-## GPU Requirements & Fallback
+---
 
-- **Minimum GPU VRAM**: 8GB (ideal for 3B parameter models in float16)
-- **CPU Fallback**: Full support for CPU-only instances. If no GPU is present, the app automatically transitions to standard PyTorch CPU execution using float16.
-- **Apple Silicon (MPS)**: Natively supported outside Docker. Tests show MPS reduces latency significantly. If MPS is available, float32 is used to avoid Metal-specific NaN numeric instability.
+## GPU Requirements
+
+| Hardware | Strategy | VRAM/RAM Needed | Performance |
+|----------|----------|-----------------|-------------|
+| NVIDIA GPU (recommended) | 4-bit quantized (`bitsandbytes`) | **~5 GB VRAM** | ~5–10s per request |
+| NVIDIA GPU (fallback) | float16 | ~16 GB VRAM | ~5–10s per request |
+| CPU-only | float16 on CPU | ~16 GB RAM | ~60–90s per request |
+| Apple Silicon (MPS) | float16 on Metal | ~16 GB unified RAM | ~15–30s per request |
+
+- **Minimum GPU VRAM:** 5 GB (with 4-bit quantization)
+- **CPU-only fallback:** Fully supported. If no CUDA GPU is detected, the system automatically falls back to CPU float16. This requires at least 16 GB of RAM allocated to the Docker container.
+
+---
+
+## Local Setup Instructions (Fallback)
+
+If the Docker image fails to start, use these steps to run the system directly on a Linux VM.
+
+### Prerequisites
+
+- Python 3.11 or higher
+- At least 16 GB RAM (for CPU inference)
+- A valid Hugging Face token with access to `deepseek-ai/DeepSeek-R1-Distill-Llama-8B`
+
+### Step-by-Step
+
+```bash
+# 1. Clone and enter the project
+cd ccpa_compliance_system/backend
+
+# 2. Create virtual environment
+python3.11 -m venv venv
+source venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Set HF token
+export HF_TOKEN=<your_huggingface_token>
+
+# 5. Pre-process CCPA statute into JSON
+python scripts/preprocess_ccpa.py
+
+# 6. Start the FastAPI server
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300
+```
+
+Wait until `SERVER READY` appears in the logs before sending requests.
+
+### Verify it works
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Test a harmful prompt
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "We sell customer browsing history to ad networks without notifying them."}'
+```
+
+---
 
 ## API Usage Examples
 
-The FastAPI server exposes two endpoints.
+### GET /health
 
-### 1. GET `/health`
-Check if the models are loaded and the vector index is built.
+Check if the server is ready and all models are loaded.
 
 **Request:**
 ```bash
 curl http://localhost:8000/health
 ```
 
-**Response:**
+**Response (HTTP 200):**
 ```json
 {"status": "ok", "vector_store_ready": true, "llm_ready": true}
 ```
 
-### 2. POST `/analyze`
+---
+
+### POST /analyze
+
 Analyze a business practice for CCPA violations.
 
-**Request (Harmful Case):**
+**Request — Violation Detected:**
 ```bash
 curl -X POST http://localhost:8000/analyze \
   -H "Content-Type: application/json" \
@@ -63,16 +169,10 @@ curl -X POST http://localhost:8000/analyze \
 
 **Response:**
 ```json
-{
-  "harmful": true,
-  "articles": [
-    "Section 1798.100",
-    "Section 1798.120"
-  ]
-}
+{"harmful": true, "articles": ["Section 1798.100", "Section 1798.120"]}
 ```
 
-**Request (Safe Case):**
+**Request — No Violation:**
 ```bash
 curl -X POST http://localhost:8000/analyze \
   -H "Content-Type: application/json" \
@@ -81,39 +181,7 @@ curl -X POST http://localhost:8000/analyze \
 
 **Response:**
 ```json
-{
-  "harmful": false,
-  "articles": []
-}
+{"harmful": false, "articles": []}
 ```
 
-## Local Setup Instructions (Fallback)
-
-If Docker fails, you can run the application directly on a Linux VM.
-
-**1. Prerequisites:**
-Ensure you have Python 3.11+ installed.
-```bash
-sudo apt update && sudo apt install -y python3.11 python3.11-venv build-essential
-```
-
-**2. Setup Virtual Environment:**
-```bash
-cd backend
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-**3. Pre-process CCPA Data:**
-```bash
-export HF_TOKEN=<your_huggingface_token>
-python scripts/preprocess_ccpa.py
-```
-
-**4. Start the Server:**
-```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300
-```
-
-Wait until you see `SERVER READY` in the terminal logs before sending requests.
+> ⚠ The response body contains **only valid JSON** — no extra text, no markdown, no explanation.
