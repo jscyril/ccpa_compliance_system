@@ -1,22 +1,29 @@
 # STATE.md — Project Memory
 
-> Last updated: 2026-03-02T01:02:00+05:30
+> Last updated: 2026-03-02T01:20:00+05:30
 
 ## Current Position
 
-- **Phase**: 5 (planned)
-- **Task**: Planning complete
-- **Status**: Ready for execution
+- **Phase**: 6 (completed)
+- **Task**: All tasks complete
+- **Status**: Verified
 
 ## Last Session Summary
 
-Backend (Milestone 1): All 4 phases executed successfully.
-Frontend (Milestone 2): 2 phases planned with 2 execution plans total.
+Milestone 2 (Frontend) executed successfully. 2 phases, 4 tasks completed.
 
-- Phase 5 Plan 5.1: HTML structure + dark-themed CSS (wave 1)
-- Phase 6 Plan 6.1: JS interactivity + API integration + polish (wave 2)
+- Phase 5: Created `frontend/index.html` + `frontend/styles.css` (dark theme, glassmorphism, responsive)
+- Phase 6: Created `frontend/app.js` (API integration, CCPA section lookup, loading states, error handling)
 
-## Next Steps
+All features verified in browser.
 
-1. /execute 5 — Build HTML + CSS foundation
-2. /execute 6 — Wire up JavaScript
+## Build & Run
+
+```bash
+# Serve frontend (from project root)
+cd frontend && python3 -m http.server 3000
+# Open http://localhost:3000
+
+# Backend (must be running for full functionality)
+docker run -e HF_TOKEN=$HF_TOKEN -p 8000:8000 --gpus all ccpa-analyzer
+```
