@@ -21,7 +21,7 @@ FEW_SHOT_EXAMPLES = [
             "third-party advertisers without informing users or providing "
             "any option to opt out of the sale."
         ),
-        "output": '{"harmful": true, "articles": ["Section 1798.120"]}',
+        "output": '{"harmful": true, "articles": ["Section 1798.120"], "explanation": "The CCPA grants consumers the right to opt-out of the sale of their personal information. Selling data without informing users or providing an opt-out mechanism is a direct violation.", "referenced_articles": ["A consumer shall have the right, at any time, to direct a business that sells or shares personal information about the consumer to third parties not to sell or share the consumer\'s personal information."]}',
     },
     {
         "practice": (
@@ -30,7 +30,7 @@ FEW_SHOT_EXAMPLES = [
             "My Personal Information' link, and honors all opt-out requests "
             "within 15 business days."
         ),
-        "output": '{"harmful": false, "articles": []}',
+        "output": '{"harmful": false, "articles": [], "explanation": "The company provides the required notice and honors opt-out requests within the statutory 15-day window, fully complying with CCPA requirements.", "referenced_articles": []}',
     },
     {
         "practice": (
@@ -38,7 +38,7 @@ FEW_SHOT_EXAMPLES = [
             "data, but the company ignores the request and continues to "
             "retain and use the data for marketing purposes."
         ),
-        "output": '{"harmful": true, "articles": ["Section 1798.105"]}',
+        "output": '{"harmful": true, "articles": ["Section 1798.105"], "explanation": "Businesses must respect verified deletion requests. Retaining and using the data for marketing after a deletion request is a violation.", "referenced_articles": ["A business that receives a verifiable consumer request from a consumer to delete the consumer\'s personal information [...] shall delete the consumer\'s personal information from its records."]}',
     },
 ]
 
@@ -49,16 +49,18 @@ Given a description of a business practice:
 2. Identify the specific section(s) violated
 
 Output ONLY valid JSON in exactly this format:
-{"harmful": true, "articles": ["Section 1798.xxx", ...]}
+{"harmful": true, "articles": ["Section 1798.xxx", ...], "explanation": "Why it violates...", "referenced_articles": ["Excerpt from statute..."]}
 
 If the practice does NOT violate the CCPA:
-{"harmful": false, "articles": []}
+{"harmful": false, "articles": [], "explanation": "Why it complies...", "referenced_articles": []}
 
 Rules:
 - Output ONLY the JSON. No explanation, no markdown, no additional text.
 - Articles must use the format "Section 1798.xxx"
-- If harmful is false, articles must be an empty list []
+- If harmful is false, explanation should explain why, and referenced_articles must be an empty list []
 - If harmful is true, articles must contain at least one section
+- The explanation must be a clear human-readable string.
+- The referenced_articles must contain short quotes or titles from the cited sections to prove the violation.
 - Only cite sections you are confident about"""
 
 

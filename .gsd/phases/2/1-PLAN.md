@@ -39,7 +39,7 @@ Purpose: Delivers REQ-03 from SPEC.md. Provides rich context to the frontend so 
     Update `AnalyzeResponse`:
     1. Keep `harmful: bool` and `articles: list[str]`
     2. Add `explanation: str` (A clear, concise explanation of the analysis)
-    3. Add `referenced_articles: list[str]` (Specific excerpts or titles from the cited sections to provide context)
+    3. Add `referenced_articles: list[str]` (Specific excerpts and titles from the cited sections to provide context)
 
     Keep validation simple (just the types).
 

@@ -19,3 +19,5 @@ class AnalyzeResponse(BaseModel):
 
     harmful: bool
     articles: list[str]
+    explanation: str
+    referenced_articles: list[str]
