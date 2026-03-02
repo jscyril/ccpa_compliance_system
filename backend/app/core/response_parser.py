@@ -16,7 +16,12 @@ import re
 logger = logging.getLogger(__name__)
 
 # Default safe response — returned when parsing fails
-SAFE_DEFAULT = {"harmful": False, "articles": []}
+SAFE_DEFAULT = {
+    "harmful": False,
+    "articles": [],
+    "explanation": "Analysis failed or output was ambiguous. Falling back to safe default.",
+    "referenced_articles": [],
+}
 
 
 def parse_response(raw_output: str) -> dict:
@@ -122,6 +127,16 @@ def _validate_and_normalize(data: dict) -> dict:
         if normalized:
             normalized_articles.append(normalized)
 
+    # Extract explanation
+    explanation = data.get("explanation", "")
+    if not isinstance(explanation, str):
+        explanation = str(explanation)
+
+    # Extract referenced_articles
+    ref_articles = data.get("referenced_articles", [])
+    if not isinstance(ref_articles, list):
+        ref_articles = []
+
     # ADR-4: Confidence fallback
     # If harmful=true but no valid articles → fallback to safe
     if harmful and not normalized_articles:
@@ -131,13 +146,16 @@ def _validate_and_normalize(data: dict) -> dict:
         )
         return SAFE_DEFAULT.copy()
 
-    # If harmful=false, ensure articles is empty
+    # If harmful=false, ensure article lists are empty
     if not harmful:
         normalized_articles = []
+        ref_articles = []
 
     return {
         "harmful": harmful,
         "articles": normalized_articles,
+        "explanation": explanation,
+        "referenced_articles": ref_articles,
     }
 
 

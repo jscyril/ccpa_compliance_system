@@ -27,7 +27,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Safe default response
-SAFE_DEFAULT = AnalyzeResponse(harmful=False, articles=[])
+SAFE_DEFAULT = AnalyzeResponse(
+    harmful=False,
+    articles=[],
+    explanation="API error.",
+    referenced_articles=[],
+)
 
 
 @asynccontextmanager
@@ -103,6 +108,11 @@ async def global_exception_handler(request, exc):
     """Catch-all: never return anything except valid JSON."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
-        content={"harmful": False, "articles": []},
+        content={
+            "harmful": False,
+            "articles": [],
+            "explanation": "Unhandled API exception.",
+            "referenced_articles": [],
+        },
         status_code=200,
     )

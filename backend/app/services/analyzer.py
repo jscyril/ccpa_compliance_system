@@ -22,7 +22,12 @@ from app.services.prompt_builder import prompt_builder
 logger = logging.getLogger(__name__)
 
 # Safe default — returned on any pipeline failure
-SAFE_DEFAULT = {"harmful": False, "articles": []}
+SAFE_DEFAULT = {
+    "harmful": False,
+    "articles": [],
+    "explanation": "Pipeline failure.",
+    "referenced_articles": [],
+}
 
 
 class Analyzer:
