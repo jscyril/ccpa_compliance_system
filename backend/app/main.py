@@ -12,7 +12,8 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Security, status, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+import json
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
@@ -112,6 +113,31 @@ async def health():
     raise HTTPException(
         status_code=503,
         detail="Service not ready. Model or index not loaded.",
+    )
+
+
+@app.get("/analyze/stream")
+async def analyze_stream(
+    prompt: str,
+    api_key: str = Depends(get_api_key),
+):
+    """
+    Stream a compliance analysis using Server-Sent Events (SSE).
+    """
+
+    def event_generator():
+        try:
+            chunk_gen = analyzer.analyze_stream(prompt)
+            for chunk in chunk_gen:
+                yield f"data: {json.dumps({'text': chunk})}\n\n"
+        except Exception as e:
+            logger.error(f"Streaming error: {e}", exc_info=True)
+            error_data = {"error": "Pipeline failure during streaming."}
+            yield f"data: {json.dumps(error_data)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
     )
 
 

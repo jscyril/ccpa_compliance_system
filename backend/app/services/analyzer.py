@@ -56,6 +56,34 @@ class Analyzer:
             logger.error(f"Analysis pipeline failed: {e}", exc_info=True)
             return SAFE_DEFAULT.copy()
 
+    def analyze_stream(self, prompt: str):
+        """
+        Stream analysis results for a business practice.
+
+        Args:
+            prompt: Natural language description.
+
+        Yields:
+            str: Text chunks directly from the LLM.
+        """
+        # Step 1: Vector search for relevant subsections
+        logger.info("[Stream] Searching for relevant CCPA subsections...")
+        search_results = self._vector_store.search(prompt, top_k=5)
+
+        # Step 2: Get full parent sections (parent-document retrieval)
+        subsection_ids = [r["id"] for r in search_results]
+        parent_sections = self._kb.get_parent_sections(subsection_ids)
+
+        # Step 3: Build LLM prompt with context
+        full_prompt = self._prompt_builder.build_prompt(
+            user_query=prompt,
+            context_sections=parent_sections,
+        )
+
+        # Step 4: Stream LLM inference
+        logger.info("[Stream] Starting LLM stream...")
+        return self._llm.generate_stream(full_prompt)
+
     def _run_pipeline(self, prompt: str) -> dict:
         """Execute the full analysis pipeline."""
         # Step 1: Vector search for relevant subsections
