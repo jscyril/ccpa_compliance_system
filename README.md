@@ -2,9 +2,9 @@
 
 ## Solution Overview
 
-This system uses a **Retrieval-Augmented Generation (RAG)** architecture to analyze business practices against the California Consumer Privacy Act (CCPA) statute and return structured JSON verdicts.
+This system uses a **Retrieval-Augmented Generation (RAG)** architecture to analyze business practices against the California Consumer Privacy Act (CCPA) statute and return structured JSON verdicts. It is optimized for production workloads and integration with frontend systems.
 
-### Architecture
+### v2.0 Architecture (Gemini Engine)
 
 ```
 User Prompt ──► FastAPI (/analyze)
@@ -23,47 +23,49 @@ User Prompt ──► FastAPI (/analyze)
                    │ Structured prompt
                    ▼
             ┌──────────────┐
-            │  LLM Engine   │  ← DeepSeek-R1-Distill-Llama-8B
-            │  (Reasoning)  │  ← Greedy decoding, max 512 tokens
+            │  LLM Engine   │  ← Google Gemini API
+            │  (Gemini 2.5) │  ← Fallback: gemini-2.0-flash
             └──────┬───────┘
-                   │ Raw text output
+                   │ JSON output (Standard or SSE Stream)
                    ▼
             ┌──────────────┐
-            │Response Parser│  ← Strips <think> tags
-            │               │  ← Extracts & validates JSON
+            │Response Parser│  ← Validates 4-field schema
             │               │  ← Normalizes article format
             └──────┬───────┘
                    │
                    ▼
-            {"harmful": bool, "articles": [...]}
+            {"harmful": bool, "articles": [...], "explanation": "...", "referenced_articles": [...]}
 ```
 
 ### Key Components
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **LLM** | `deepseek-ai/DeepSeek-R1-Distill-Llama-8B` | Reasoning model for multi-step legal analysis. Falls back to `Qwen/Qwen2.5-3B-Instruct` if loading fails. |
+| **LLM** | `gemini-2.5-pro` | Powerful cloud-based legal reasoning. Falls back to `gemini-2.0-flash` if Pro is unavailable or rate-limited. |
 | **Embedder** | `BAAI/bge-small-en-v1.5` (CPU) | Embeds CCPA subsections into vectors for semantic retrieval. |
 | **Vector DB** | ChromaDB (in-memory) | Stores and searches 212 embedded CCPA subsections at startup. |
-| **API** | FastAPI + Uvicorn | Exposes `POST /analyze` and `GET /health` on port 8000. |
-| **Knowledge Base** | `ccpa_statute.md` → `ccpa_sections.json` | Pre-parsed, hierarchically structured CCPA statute (45 sections, 212 subsections). |
+| **API** | FastAPI + Uvicorn | Exposes `POST /analyze`, `GET /analyze/stream`, and `GET /health`. |
+| **Knowledge Base** | `ccpa_sections.json` | Pre-parsed, hierarchically structured CCPA statute. |
 
 ### Processing Pipeline
 
 1. **Preprocessing (build-time):** The verified `ccpa_statute.md` is parsed into `ccpa_sections.json` with hierarchical section → subsection structure.
-2. **Startup:** The LLM is loaded (4-bit quantized on GPU, float16 on CPU/MPS). The embedding model indexes all 212 subsections into ChromaDB.
-3. **Inference:** For each prompt, the top-5 most relevant CCPA subsections are retrieved via semantic search, injected into a few-shot prompt, and passed to the LLM. The LLM's reasoning output is stripped of `<think>` tags and parsed into strict JSON.
-4. **Safety Fallback:** If parsing fails or the LLM is uncertain, the system returns `{"harmful": false, "articles": []}` to avoid citing incorrect articles.
+2. **Startup:** The FastAPI server initializes. The embedding model (`bge-small`) indexes all 212 subsections into the ChromaDB collection.
+3. **Inference:** For each prompt, the top-5 most relevant CCPA subsections are retrieved via semantic search, injected into a strict few-shot prompt, and sent to Google Gemini. 
+4. **Safety Fallback:** If parsing fails or the LLM is uncertain, the system safely returns `{"harmful": false, "articles": []}` to avoid citing incorrect articles.
 
 ---
 
-## Docker Run Command
+## Docker Deployment
+
+The application is containerized in a lightweight `<200MB` Alpine/Slim image, designed for serverless environments (Google Cloud Run, Railway, Render). It uses a CPU-only architecture for embeddings and relies on the Gemini API for inference.
 
 ```bash
-docker run --gpus all -p 8000:8000 -e HF_TOKEN=<your_huggingface_token> samuelshine/ccpa-compliance:latest
+docker build -t ccpa-analyzer:latest .
+docker run -p 8000:8000 -e GEMINI_API_KEY=<your_api_key> -e API_KEY=<optional_security_key> ccpa-analyzer:latest
 ```
 
-> **Note:** The container starts, loads the LLM, and builds the vector index during startup. The `GET /health` endpoint will return HTTP 200 once the server is fully ready. This may take up to 2–3 minutes depending on hardware.
+> **Note:** The `bge-small` embedding model is pre-cached during the build phase (`docker build`) so container startup is extremely fast. The `GET /health` endpoint returns HTTP 200 when ready.
 
 ---
 
@@ -71,35 +73,87 @@ docker run --gpus all -p 8000:8000 -e HF_TOKEN=<your_huggingface_token> samuelsh
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `HF_TOKEN` | **Yes** | Hugging Face access token for downloading the gated DeepSeek-R1-Distill-Llama-8B model weights. Must be provided at runtime via `-e HF_TOKEN=<token>`. Never hardcoded in source code. |
+| `GEMINI_API_KEY` | **Yes** | Google Gemini API key. Obtained from Google AI Studio. |
+| `API_KEY` | No | If set, the `/analyze` and `/analyze/stream` endpoints will require an `X-API-Key` header matching this value. |
+| `CORS_ORIGINS` | No | Commma-separated list of allowed CORS origins (default: `*`). |
+| `LLM_FALLBACK_MODE` | No | Set to "true" to force the use of `gemini-2.0-flash` over Pro. |
 
 ---
 
-## GPU Requirements
+## API Usage Examples
 
-| Hardware | Strategy | VRAM/RAM Needed | Performance |
-|----------|----------|-----------------|-------------|
-| NVIDIA GPU (recommended) | 4-bit quantized (`bitsandbytes`) | **~5 GB VRAM** | ~5–10s per request |
-| NVIDIA GPU (fallback) | float16 | ~16 GB VRAM | ~5–10s per request |
-| CPU-only | float16 on CPU | ~16 GB RAM | ~60–90s per request |
-| Apple Silicon (MPS) | float16 on Metal | ~16 GB unified RAM | ~15–30s per request |
+> If the `API_KEY` environment variable is set on the server, you must include the `-H "X-API-Key: <your_key>"` header in all analysis requests.
 
-- **Minimum GPU VRAM:** 5 GB (with 4-bit quantization)
-- **CPU-only fallback:** Fully supported. If no CUDA GPU is detected, the system automatically falls back to CPU float16. This requires at least 16 GB of RAM allocated to the Docker container.
+### GET /health
+
+Check if the API and vector database are ready.
+
+**Request:**
+```bash
+curl http://localhost:8000/health
+```
+
+**Response (HTTP 200):**
+```json
+{"status": "healthy"}
+```
 
 ---
 
-## Local Setup Instructions (Fallback)
+### POST /analyze (Standard Request)
 
-If the Docker image fails to start, use these steps to run the system directly on a Linux VM.
+Analyze a business practice and receive a complete JSON payload.
 
-### Prerequisites
+**Request:**
+```bash
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "We sell customer browsing history to ad networks without providing any opt-out mechanism."}'
+```
 
-- Python 3.11 or higher
-- At least 16 GB RAM (for CPU inference)
-- A valid Hugging Face token with access to `deepseek-ai/DeepSeek-R1-Distill-Llama-8B`
+**Response:**
+```json
+{
+  "harmful": true,
+  "articles": [
+    "Section 1798.120"
+  ],
+  "explanation": "The CCPA grants consumers the right to direct a business that sells their personal information to third parties not to sell the consumer's personal information. Selling browsing history without an opt-out mechanism explicitly violates this right.",
+  "referenced_articles": [
+    "Section 1798.120(a) A consumer shall have the right, at any time, to direct a business that sells personal information about the consumer to third parties not to sell the consumer's personal information. This right may be referred to as the right to opt-out."
+  ]
+}
+```
 
-### Step-by-Step
+---
+
+### GET /analyze/stream (SSE Streaming)
+
+Stream the analysis response directly to a frontend as Server-Sent Events (SSE). This dramatically reduces perceived latency, especially for the `explanation` field generation.
+
+**Request:**
+```bash
+curl -N "http://localhost:8000/analyze/stream?prompt=We%20sell%20customer%20browsing%20history."
+```
+
+**Response (Event Stream):**
+```text
+data: {"text": "{\n"}
+
+data: {"text": "  \"harmful\": true,\n"}
+
+data: {"text": "  \"articles\": [\n"}
+
+data: {"text": "    \"Section 1798.120\"\n"}
+
+data: {"text": "  ],\n..."}
+```
+
+---
+
+## Local Development Setup
+
+To run the application locally without Docker:
 
 ```bash
 # 1. Clone and enter the project
@@ -112,76 +166,22 @@ source venv/bin/activate
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Set HF token
-export HF_TOKEN=<your_huggingface_token>
+# 4. Set environment variables
+export GEMINI_API_KEY="AIzaSyYourKeyHere..."
 
 # 5. Pre-process CCPA statute into JSON
 python scripts/preprocess_ccpa.py
 
 # 6. Start the FastAPI server
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Wait until `SERVER READY` appears in the logs before sending requests.
+## Running the Integration Test
 
-### Verify it works
+A unified end-to-end integration and benchmark script is provided in `backend/scripts/test_integration.py`. Make sure your server is running on `localhost:8000` before executing:
 
 ```bash
-# Health check
-curl http://localhost:8000/health
-
-# Test a harmful prompt
-curl -X POST http://localhost:8000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "We sell customer browsing history to ad networks without notifying them."}'
+cd backend
+export API_KEY="your_api_key_if_set"
+python scripts/test_integration.py
 ```
-
----
-
-## API Usage Examples
-
-### GET /health
-
-Check if the server is ready and all models are loaded.
-
-**Request:**
-```bash
-curl http://localhost:8000/health
-```
-
-**Response (HTTP 200):**
-```json
-{"status": "ok", "vector_store_ready": true, "llm_ready": true}
-```
-
----
-
-### POST /analyze
-
-Analyze a business practice for CCPA violations.
-
-**Request — Violation Detected:**
-```bash
-curl -X POST http://localhost:8000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "We sell customer browsing history to ad networks without notifying them."}'
-```
-
-**Response:**
-```json
-{"harmful": true, "articles": ["Section 1798.100", "Section 1798.120"]}
-```
-
-**Request — No Violation:**
-```bash
-curl -X POST http://localhost:8000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "We provide a clear privacy policy and honor all deletion requests."}'
-```
-
-**Response:**
-```json
-{"harmful": false, "articles": []}
-```
-
-> ⚠ The response body contains **only valid JSON** — no extra text, no markdown, no explanation.
