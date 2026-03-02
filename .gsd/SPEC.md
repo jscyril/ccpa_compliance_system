@@ -3,34 +3,39 @@
 > **Status**: `FINALIZED`
 
 ## Vision
-A high-performance FastAPI service that uses an under-8B parameter local LLM to automatically analyze short natural-language descriptions of business practices against the provided CCPA statute (PDF format), strictly returning whether the practice is harmful and which specific CCPA articles it violates as formatted JSON.
+A portfolio-grade CCPA compliance analysis API that uses Google's Gemini API and RAG to analyze business practices against the CCPA statute. Returns rich, structured responses with explanations, cited articles, and violation classifications — streamed in real-time via SSE. Designed as a production-ready backend that a separate frontend team can integrate with immediately.
 
 ## Goals
-1. Accurately classify data practices against the CCPA legal text.
-2. Output a strictly typed JSON response (`harmful` boolean, `articles` list of strings).
-3. Operate efficiently with low latency to pass automated test scripts.
-4. Run entirely within a self-contained Docker image requiring only a Hugging Face token.
+1. **Gemini-powered analysis** — Replace local LLM with Gemini API (configurable flash/pro) for fast, accurate legal reasoning
+2. **Rich response schema** — Return harmful status, violated articles, explanation, and referenced statute text
+3. **Streaming responses** — SSE endpoint so frontends can display results progressively
+4. **Frontend-ready API** — CORS, API key auth, OpenAPI docs, consistent error handling
+5. **Lightweight deployment** — ~200MB Docker image deployable to Cloud Run/Railway/Render
+6. **High performance** — <2s responses, concurrent request handling, robust error recovery
 
 ## Non-Goals (Out of Scope)
-- Complex conversational interactions or chat history.
-- Explaining the legal reasoning back to the caller (only strict JSON output is permitted).
-- Models larger than 8 billion parameters.
-- Hardcoding sensitive credentials like `HF_TOKEN`.
+- Frontend development (separate team)
+- User account management / login flows
+- Multi-statute support (GDPR, HIPAA) — future milestone
+- Real-time monitoring dashboard
 
 ## Users
-Automated evaluation scripts (`test.py`) that will rapidly send prompts and validate the JSON schema and correctness.
+- **Frontend developers** consuming the REST/SSE API
+- **Portfolio reviewers** evaluating system design and code quality
+- **End users** (via frontend) analyzing business practices for CCPA compliance
 
 ## Constraints
-- **Technical**: Must run a local model (up to 8B params) via a Hugging Face token (passed strictly via `HF_TOKEN` environment variable).
-- **Interface**: Must present a FastAPI HTTP server.
-- **Environment**: Must be fully containerized via Docker.
-- **Performance**: Must meet strict latency requirements for automated test evaluation.
-- **Input/Knowledge Base**: Legal reasoning must be grounded in the provided CCPA statute PDF.
+- Gemini API requires a `GEMINI_API_KEY` environment variable
+- RAG knowledge base is CCPA-only (45 sections, 212 subsections)
+- Must maintain backward compatibility with `POST /analyze` JSON endpoint
+- Python 3.11+, FastAPI
 
 ## Success Criteria
-- [ ] Successfully builds into a Docker image.
-- [ ] Container accepts `HF_TOKEN` environment variable and downloads/initializes the model.
-- [ ] FastAPI server starts and accepts queries.
-- [ ] Returns exactly the `{"harmful": true | false, "articles": ["Section 1798.xxx"]}` schema.
-- [ ] Zero extra text, markdown formatting, or explanation in the output.
-- [ ] Passes whatever automated `test.py` script the evaluation framework uses within the latency limits.
+- [ ] Gemini API integration with flash/pro config toggle
+- [ ] Response includes: harmful, articles, explanation, referenced_sections
+- [ ] SSE streaming endpoint functional
+- [ ] API key authentication working
+- [ ] CORS configured for frontend integration
+- [ ] Docker image builds and runs under 200MB
+- [ ] Response time <2s for typical queries
+- [ ] All 10 original test cases pass with new schema

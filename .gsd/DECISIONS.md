@@ -1,33 +1,29 @@
-# DECISIONS.md — Architecture Decision Records
+# DECISIONS.md — Architectural Decision Records
 
-> Format: `ADR-{N}: {Title} — {Date}`
+## ADR-001: Switch from Local LLM to Gemini API
+**Date**: 2026-03-02
+**Status**: Accepted
+**Context**: The hackathon version used DeepSeek-R1-Distill-Llama-8B (16GB, slow on CPU, requires NVIDIA GPU for good perf). For a portfolio project, we need fast demos and easy deployment.
+**Decision**: Use Google Gemini API with a config toggle between gemini-2.0-flash (fast/cheap) and gemini-1.5-pro (more accurate).
+**Consequence**: Docker image drops from ~17GB to ~200MB. No GPU required. Response time drops from 60-90s to <2s. Requires GEMINI_API_KEY env var.
 
-## ADR-1: Llama 3.1 8B Instruct as primary LLM — 2026-03-01
+## ADR-002: SSE Streaming over WebSocket
+**Date**: 2026-03-02
+**Status**: Accepted
+**Context**: Frontend team needs progressive response display. Options: WebSocket or SSE.
+**Decision**: Use Server-Sent Events (SSE). Simpler than WebSocket for our request-response pattern. Frontend uses native EventSource API.
+**Consequence**: Easier to implement, test, and debug. No persistent connection management.
 
-**Context**: Need a sub-8B parameter model with strong instruction-following for JSON output.
-**Decision**: Llama 3.1 8B Instruct as primary, Mistral-7B-v0.3 as fallback.
-**Rationale**: Best-in-class instruction following for structured output. 4-bit quantization via bitsandbytes to fit in consumer GPU VRAM.
+## ADR-003: API Key Authentication
+**Date**: 2026-03-02
+**Status**: Accepted
+**Context**: Need auth that recognizes the app without requiring user login.
+**Decision**: API key via X-API-Key header. Key is set as env var on the backend. Frontend embeds the key.
+**Consequence**: Simple, stateless, no token refresh. Sufficient for portfolio demo.
 
-## ADR-2: ChromaDB for in-memory vector search — 2026-03-01
-
-**Context**: Need a vector DB for RAG retrieval inside a Docker container.
-**Decision**: ChromaDB running in-memory (no persistence needed).
-**Rationale**: Lightweight, zero-config, no external service. Qdrant was considered but heavier for a single-container deployment.
-
-## ADR-3: Parent-Document Retrieval over flat chunking — 2026-03-01
-
-**Context**: Legal text has interconnected clauses. Small chunks lose context.
-**Decision**: Embed subsection-level chunks (child), but retrieve full section text (parent) for the LLM prompt.
-**Rationale**: Child chunks provide precise semantic matching. Parent sections give the LLM full legal context for accurate article identification.
-
-## ADR-4: Confidence fallback to avoid zero-marks trap — 2026-03-01
-
-**Context**: Citing an incorrect article results in zero marks. 
-**Decision**: When LLM output is unparseable or confidence is low, return `{"harmful": false, "articles": []}`.
-**Rationale**: Conservative strategy — it's better to miss a violation than to cite a wrong article.
-
-## ADR-5: bge-small-en-v1.5 for embeddings — 2026-03-01
-
-**Context**: Need an embedding model that fits alongside the 8B LLM in VRAM.
-**Decision**: BAAI/bge-small-en-v1.5 via sentence-transformers.
-**Rationale**: Only 130MB, top-tier performance for its size on MTEB. Leaves VRAM headroom for the quantized LLM.
+## ADR-004: Keep RAG Pipeline
+**Date**: 2026-03-02
+**Status**: Accepted
+**Context**: Even with Gemini's large context, RAG improves accuracy by surfacing the most relevant statute sections.
+**Decision**: Keep ChromaDB + bge-small-en-v1.5 embeddings. Feed top-5 sections to Gemini.
+**Consequence**: Better citation accuracy. Demonstrates RAG architecture knowledge in portfolio.
