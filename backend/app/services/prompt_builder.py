@@ -1,15 +1,15 @@
 """
 Prompt Builder
 
-Constructs LLM prompts with Llama 3.1 Instruct chat format,
-few-shot examples, and CCPA context injection for compliance analysis.
+Constructs prompts for Gemini API with few-shot examples and
+CCPA context injection for compliance analysis.
 
 Prompt structure:
 1. System instruction (CCPA Compliance Auditor role)
 2. Few-shot examples (3: 2 harmful, 1 safe)
 3. Retrieved CCPA context sections
 4. User query
-5. Output marker
+5. Output instruction
 """
 
 
@@ -63,7 +63,7 @@ Rules:
 
 
 class PromptBuilder:
-    """Builds prompts for CCPA compliance analysis using Llama 3.1 chat format."""
+    """Builds prompts for CCPA compliance analysis."""
 
     def build_prompt(
         self,
@@ -80,48 +80,46 @@ class PromptBuilder:
                 Each dict should have: section_id, title, full_text
 
         Returns:
-            Complete prompt string in Llama 3.1 chat format.
+            Complete prompt string for Gemini API.
         """
-        # Build the system message with few-shot examples
-        system_content = SYSTEM_PROMPT + "\n\n"
-        system_content += "Here are examples of correct analysis:\n\n"
+        parts = []
 
+        # System instruction
+        parts.append(SYSTEM_PROMPT)
+        parts.append("")
+
+        # Few-shot examples
+        parts.append("Here are examples of correct analysis:")
+        parts.append("")
         for i, example in enumerate(FEW_SHOT_EXAMPLES, 1):
-            system_content += f"Example {i}:\n"
-            system_content += f"Practice: {example['practice']}\n"
-            system_content += f"Output: {example['output']}\n\n"
+            parts.append(f"Example {i}:")
+            parts.append(f"Practice: {example['practice']}")
+            parts.append(f"Output: {example['output']}")
+            parts.append("")
 
-        # Build the user message with context and query
-        user_content = ""
-
-        # Add retrieved CCPA sections as context (truncated to fit context window)
+        # Retrieved CCPA context sections
         MAX_SECTION_CHARS = 2000
         MAX_SECTIONS = 3
         if context_sections:
-            user_content += "Relevant CCPA Statute Sections:\n\n"
+            parts.append("Relevant CCPA Statute Sections:")
+            parts.append("")
             for section in context_sections[:MAX_SECTIONS]:
                 sid = section.get("section_id", "Unknown")
                 title = section.get("title", "")
                 text = section.get("full_text", "")
                 if len(text) > MAX_SECTION_CHARS:
                     text = text[:MAX_SECTION_CHARS] + "... [truncated]"
-                user_content += f"--- Section {sid}: {title} ---\n"
-                user_content += f"{text}\n\n"
+                parts.append(f"--- Section {sid}: {title} ---")
+                parts.append(text)
+                parts.append("")
 
-        user_content += f"Business Practice to Analyze:\n{user_query}\n\n"
-        user_content += "Provide your analysis as JSON only:"
+        # User query
+        parts.append(f"Business Practice to Analyze:")
+        parts.append(user_query)
+        parts.append("")
+        parts.append("Provide your analysis as JSON only:")
 
-        # Format as Llama 3.1 Instruct chat template
-        prompt = (
-            "<|begin_of_text|>"
-            "<|start_header_id|>system<|end_header_id|>\n\n"
-            f"{system_content}<|eot_id|>"
-            "<|start_header_id|>user<|end_header_id|>\n\n"
-            f"{user_content}<|eot_id|>"
-            "<|start_header_id|>assistant<|end_header_id|>\n\n"
-        )
-
-        return prompt
+        return "\n".join(parts)
 
 
 # Module-level singleton
