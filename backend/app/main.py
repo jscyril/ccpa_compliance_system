@@ -11,8 +11,12 @@ On startup, configures the Gemini API and builds the vector search index.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security, status, Depends
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
+
+from app.core.config import settings
 
 from app.core.llm_engine import llm_engine
 from app.core.vector_store import vector_store
@@ -33,6 +37,20 @@ SAFE_DEFAULT = AnalyzeResponse(
     explanation="API error.",
     referenced_articles=[],
 )
+
+# API Key Security Scheme
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def get_api_key(api_key: str = Security(api_key_header)):
+    """Authorize request using X-API-Key header."""
+    # If API key is configured, enforce it
+    if settings.API_KEY and api_key != settings.API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid API Key",
+        )
+    return api_key
 
 
 @asynccontextmanager
@@ -76,6 +94,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/health")
 async def health():
@@ -89,11 +116,14 @@ async def health():
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(request: AnalyzeRequest):
+async def analyze(
+    request: AnalyzeRequest,
+    api_key: str = Depends(get_api_key),
+):
     """
     Analyze a business practice for CCPA compliance.
 
-    Returns strict JSON: {"harmful": bool, "articles": [...]}
+    Returns strict JSON: {"harmful": bool, "articles": [...], "explanation": "...", "referenced_articles": [...]}
     """
     try:
         result = analyzer.analyze(request.prompt)
