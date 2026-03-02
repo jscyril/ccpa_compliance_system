@@ -2,85 +2,87 @@
 phase: 1
 plan: 2
 wave: 1
+depends_on: []
+files_modified:
+  - backend/app/services/prompt_builder.py
+  - backend/app/core/response_parser.py
+autonomous: true
+
+must_haves:
+  truths:
+    - "Prompt uses Gemini's native format (no Llama chat tags)"
+    - "Response parser handles Gemini's cleaner JSON output"
+    - "DeepSeek <think> tag stripping is removed"
+  artifacts:
+    - "prompt_builder.py has no Llama-specific formatting"
+    - "response_parser.py is simplified for Gemini output"
 ---
 
-# Plan 1.2: CCPA Knowledge Retrieval Layer
+# Plan 1.2: Adapt Prompt Builder & Response Parser for Gemini
 
 ## Objective
-Build the knowledge service that loads the structured CCPA sections and provides retrieval methods for the RAG pipeline. This service is consumed by the analyzer in Phase 2.
+Remove Llama 3.1 chat template formatting from prompt_builder.py and simplify response_parser.py for Gemini's cleaner output. These files have no dependency on Plan 1.1 (they don't import llm_engine), so they can execute in parallel.
+
+Purpose: Gemini doesn't need `<|begin_of_text|>` tags or `<think>` tag stripping. Cleaner prompts = better Gemini output.
 
 ## Context
 - .gsd/SPEC.md
-- .gsd/ARCHITECTURE.md
-- backend/app/data/ccpa_sections.json (populated by Plan 1.1)
-- backend/app/services/ccpa_knowledge.py (empty stub)
-- backend/app/services/__init__.py (empty stub)
+- backend/app/services/prompt_builder.py (129 lines — Llama chat format)
+- backend/app/core/response_parser.py (167 lines — DeepSeek think tags)
 
 ## Tasks
 
 <task type="auto">
-  <name>Implement ccpa_knowledge.py service</name>
-  <files>backend/app/services/ccpa_knowledge.py</files>
+  <name>Rewrite prompt_builder.py for Gemini</name>
+  <files>backend/app/services/prompt_builder.py</files>
   <action>
-    Create a CCPAKnowledge class that:
-    1. Loads `ccpa_sections.json` at initialization from a path relative to the data directory
-    2. Stores sections in memory as a list of dicts
-    3. Exposes these methods:
-       - `get_all_sections() -> list[dict]` — returns all section objects
-       - `get_section_by_id(section_id: str) -> dict | None` — lookup by section_id (e.g., "1798.100")
-       - `get_all_subsections() -> list[dict]` — returns flattened list of all subsections with their parent section_id attached (used for embedding child chunks)
-       - `get_parent_sections(subsection_ids: list[str]) -> list[dict]` — given subsection IDs like "1798.100(a)", returns the full parent section objects (deduplicated)
-    4. Create a module-level singleton instance: `ccpa_kb = CCPAKnowledge()`
+    Rewrite PromptBuilder to produce plain-text prompts (no Llama chat tags):
+    1. Keep the same SYSTEM_PROMPT content and FEW_SHOT_EXAMPLES
+    2. Remove all Llama 3.1 Instruct tags: <|begin_of_text|>, <|start_header_id|>, <|end_header_id|>, <|eot_id|>
+    3. Instead, build the prompt as a simple structured string:
+       - System instruction block
+       - Few-shot examples block
+       - Retrieved CCPA context sections
+       - User query
+       - Output instruction
+    4. Keep the same build_prompt(user_query, context_sections) interface
+    5. Keep the same module-level singleton
 
-    IMPORTANT: The `get_parent_sections` method is critical — it enables "Parent-Document Retrieval" where we search by subsection (child) but return the full section (parent) to the LLM.
-
-    AVOID: Do NOT load the file on every method call — load once at init.
-    AVOID: Do NOT import any external libraries — this is pure Python/JSON.
+    AVOID: Don't use Gemini's multi-turn format — we're passing a single prompt string to generate_content().
+    AVOID: Don't change the method signature — analyzer.py depends on it.
   </action>
-  <verify>cd backend && python -c "
-from app.services.ccpa_knowledge import ccpa_kb
-sections = ccpa_kb.get_all_sections()
-print(f'Total sections: {len(sections)}')
-assert len(sections) >= 10
-
-sub = ccpa_kb.get_all_subsections()
-print(f'Total subsections: {len(sub)}')
-assert len(sub) >= 20
-
-s = ccpa_kb.get_section_by_id('1798.100')
-assert s is not None
-print(f'Section 1798.100 title: {s[\"title\"]}')
-
-parents = ccpa_kb.get_parent_sections(['1798.100(a)', '1798.120(a)'])
-print(f'Parent sections retrieved: {len(parents)}')
-assert len(parents) >= 2
-print('All checks passed')
-"</verify>
-  <done>ccpa_knowledge.py loads ccpa_sections.json and all 4 methods return correct results</done>
+  <verify>python -c "from app.services.prompt_builder import prompt_builder; p = prompt_builder.build_prompt('test', []); assert '<|' not in p; print('OK')"</verify>
+  <done>
+    - No Llama chat tags in prompt output
+    - Same build_prompt() interface preserved
+    - Few-shot examples and system prompt content intact
+  </done>
 </task>
 
 <task type="auto">
-  <name>Wire up service __init__.py exports</name>
-  <files>backend/app/services/__init__.py, backend/app/core/__init__.py, backend/app/schemas/__init__.py</files>
+  <name>Simplify response_parser.py for Gemini</name>
+  <files>backend/app/core/response_parser.py</files>
   <action>
-    Update the three __init__.py files to export their modules for clean imports:
+    Simplify the response parser:
+    1. Remove DeepSeek <think> tag stripping (line 62)
+    2. Keep all 4 JSON extraction strategies (direct, markdown fence, regex)
+    3. Keep the validation and normalization logic
+    4. Keep the SAFE_DEFAULT fallback behavior
+    5. Keep _normalize_article() unchanged
 
-    backend/app/services/__init__.py:
-    ```python
-    from .ccpa_knowledge import ccpa_kb
-    ```
+    This is a minor change — just remove the one DeepSeek-specific line.
 
-    backend/app/core/__init__.py and backend/app/schemas/__init__.py:
-    Leave as empty files for now (will be populated in Phase 2 and 3).
-    Just ensure they exist so the packages are importable.
+    AVOID: Don't change the parse_response() return type or interface.
   </action>
-  <verify>cd backend && python -c "from app.services import ccpa_kb; print(f'Imported ccpa_kb with {len(ccpa_kb.get_all_sections())} sections')"</verify>
-  <done>Importing `from app.services import ccpa_kb` works and returns valid data</done>
+  <verify>python -c "from app.core.response_parser import parse_response; r = parse_response('{\"harmful\": true, \"articles\": [\"Section 1798.120\"]}'); assert r['harmful'] == True; print('OK')"</verify>
+  <done>
+    - No <think> tag references in code
+    - parse_response() still works for direct JSON, markdown fences, and regex extraction
+    - SAFE_DEFAULT fallback intact
+  </done>
 </task>
 
 ## Success Criteria
-- [ ] `ccpa_knowledge.py` implements CCPAKnowledge with all 4 methods
-- [ ] Singleton `ccpa_kb` is importable from `app.services`
-- [ ] `get_all_sections()` returns ≥10 sections
-- [ ] `get_all_subsections()` returns ≥20 subsections
-- [ ] `get_parent_sections()` correctly maps child IDs to parent sections
+- [ ] prompt_builder.build_prompt() returns clean text with no Llama tags
+- [ ] response_parser.parse_response() works without <think> stripping
+- [ ] Both modules maintain their existing interfaces
