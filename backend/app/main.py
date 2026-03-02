@@ -5,7 +5,7 @@ Exposes:
 - POST /analyze — Analyze a business practice against CCPA
 - GET /health — Health check (model loaded and ready)
 
-On startup, loads the LLM and builds the vector search index.
+On startup, configures the Gemini API and builds the vector search index.
 """
 
 import logging
@@ -39,10 +39,10 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
 
     try:
-        # Load LLM
-        logger.info("Loading LLM engine...")
+        # Configure Gemini API
+        logger.info("Configuring Gemini API...")
         llm_engine.load()
-        logger.info("LLM engine loaded successfully")
+        logger.info("Gemini API configured successfully")
 
         # Build vector index
         logger.info("Building vector search index...")
@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CCPA Compliance Analyzer",
     description="Analyze business practices against the CCPA statute",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 

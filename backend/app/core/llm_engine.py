@@ -9,7 +9,7 @@ The model is configured lazily via load() — called during FastAPI startup.
 
 import logging
 
-import google.generativeai as genai
+from google import genai
 
 from app.core.config import settings
 
@@ -20,17 +20,17 @@ class LLMEngine:
     """Manages Gemini API configuration and inference."""
 
     def __init__(self):
-        self._model = None
+        self._client = None
         self._model_name = None
 
     @property
     def is_ready(self) -> bool:
         """Check if the Gemini API is configured and ready."""
-        return self._model is not None
+        return self._client is not None
 
     def load(self) -> None:
         """
-        Configure the Gemini API and create the model instance.
+        Configure the Gemini API client.
 
         Reads GEMINI_API_KEY and GEMINI_MODEL from settings.
         """
@@ -40,10 +40,8 @@ class LLMEngine:
                 "Set it as an environment variable or in .env"
             )
 
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-
+        self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self._model_name = settings.GEMINI_MODEL
-        self._model = genai.GenerativeModel(self._model_name)
 
         logger.info(f"Gemini API configured with model: {self._model_name}")
 
@@ -60,7 +58,10 @@ class LLMEngine:
         if not self.is_ready:
             raise RuntimeError("Model not loaded. Call load() first.")
 
-        response = self._model.generate_content(prompt)
+        response = self._client.models.generate_content(
+            model=self._model_name,
+            contents=prompt,
+        )
         return response.text.strip()
 
     def generate_stream(self, prompt: str):
@@ -79,8 +80,10 @@ class LLMEngine:
         if not self.is_ready:
             raise RuntimeError("Model not loaded. Call load() first.")
 
-        response = self._model.generate_content(prompt, stream=True)
-        for chunk in response:
+        for chunk in self._client.models.generate_content_stream(
+            model=self._model_name,
+            contents=prompt,
+        ):
             if chunk.text:
                 yield chunk.text
 
