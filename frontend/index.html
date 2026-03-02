@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CCPA Compliance Analyzer</title>
+  <meta name="description" content="Intelligent CCPA Compliance Analyzer — AI-powered enterprise privacy analysis." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-title">Intelligent CCPA Compliance Analyzer</div>
+    <div class="header-actions">
+      <button id="btn-export" class="btn-secondary" type="button">Export Report</button>
+      <div id="status-indicator" class="btn-secondary"
+        style="border:none; cursor:default; display:flex; align-items:center;" role="status">
+        <span id="status-dot" class="status-dot offline"></span>
+        <span class="status-text" style="font-size: 0.8rem; color: var(--text-secondary);">Status: Checking...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Split Pane — 40 / 60 -->
+  <main class="split-pane">
+
+    <!-- LEFT PANE: Input -->
+    <section class="pane pane-left">
+      <div class="input-section">
+        <label for="prompt-input" class="input-label">Business Practice or Policy</label>
+
+        <div class="textarea-wrapper">
+          <textarea id="prompt-input" class="policy-input"
+            placeholder="Paste your privacy policy text, data collection clause, or marketing copy here...&#10;&#10;e.g., 'We collect geolocation data to serve personalized ads and share it with our affiliates without an explicit opt-out mechanism.'"
+            spellcheck="false"></textarea>
+        </div>
+
+        <button id="analyze-btn" class="btn-primary" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          <span class="btn-text">Run Analysis</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- RIGHT PANE: Output -->
+    <section class="pane pane-right">
+      <div class="output-section">
+
+        <!-- EMPTY STATE: Blurred JSON Teaser -->
+        <div id="empty-state" class="empty-state">
+          <!-- Ghost Verdict Card -->
+          <div class="empty-verdict-outline">
+            <div class="ghost-badge"></div>
+            <div class="ghost-lines">
+              <div class="ghost-line short"></div>
+              <div class="ghost-line medium"></div>
+            </div>
+          </div>
+
+          <!-- Ghost JSON block with blurred teaser -->
+          <div class="empty-json-outline">
+            <div class="empty-json-header">Raw Engine Output</div>
+            <pre class="ghost-json">{
+  "harmful": true,
+  "articles": [
+    "Cal. Civ. Code § 1798.120",
+    "Cal. Civ. Code § 1798.135",
+    "Cal. Civ. Code § 1798.100"
+  ],
+  "confidence": 0.94,
+  "retrieved_chunks": 5,
+  "reasoning": "The text describes the sale of
+   personal information without an opt-out
+   mechanism, violating CCPA guidelines..."
+}</pre>
+            <div class="empty-await-label">
+              <span>Awaiting Analysis</span>
+              <p>Results and raw engine output will render here.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESULTS STATE (after analysis) -->
+        <div id="results-container" class="hidden" style="display:flex; flex-direction:column; gap:20px; height:100%;">
+
+          <!-- Verdict Card -->
+          <div id="verdict-card" class="verdict-card" role="alert">
+            <div id="verdict-icon"></div>
+            <div class="verdict-header">
+              <span class="verdict-title">Verdict Summary</span>
+              <span id="verdict-status" class="verdict-status">Analyzing...</span>
+            </div>
+          </div>
+
+          <!-- JSON Output Block -->
+          <div class="code-container">
+            <div class="code-header">
+              <span class="code-title">Raw Engine Output</span>
+              <button id="btn-copy-json" class="btn-icon" aria-label="Copy JSON" title="Copy JSON">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                Copy
+              </button>
+            </div>
+            <pre id="json-output" class="code-block"><code></code></pre>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js" defer></script>
+</body>
+
+</html>
