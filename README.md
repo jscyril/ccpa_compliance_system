@@ -60,7 +60,7 @@ User Prompt ──► FastAPI (/analyze)
 ## Docker Run Command
 
 ```bash
-docker run --gpus all -p 8000:8000 -e HF_TOKEN=<your_huggingface_token> yourusername/ccpa-compliance:latest
+docker run --gpus all -p 8000:8000 -e HF_TOKEN=<your_huggingface_token> samuelshine/ccpa-compliance:latest
 ```
 
 > **Note:** The container starts, loads the LLM, and builds the vector index during startup. The `GET /health` endpoint will return HTTP 200 once the server is fully ready. This may take up to 2–3 minutes depending on hardware.
