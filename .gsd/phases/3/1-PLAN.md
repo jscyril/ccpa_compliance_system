@@ -2,140 +2,75 @@
 phase: 3
 plan: 1
 wave: 1
+depends_on: []
+files_modified:
+  - backend/app/main.py
+autonomous: true
+
+must_haves:
+  truths:
+    - "CORS middleware is applied with settings.CORS_ORIGINS"
+    - "API endpoints are protected by X-API-Key header auth"
+  artifacts:
+    - "main.py imports CORSMiddleware and APIKeyHeader"
+    - "/analyze endpoint requires api_key_dependency"
 ---
 
-# Plan 3.1: FastAPI Server & Service Orchestration
+# Plan 3.1: API Security (CORS & Authentication)
 
 ## Objective
-Wire all Phase 1 and 2 components into a working FastAPI application with Pydantic validation, analyzer orchestration, and health check endpoint.
+Implement CORS to allow cross-origin requests from the frontend, and add stateless API key authentication using the `X-API-Key` header to protect the system from unauthorized abuse.
+
+Purpose: Delivers REQ-05 and REQ-06 from SPEC.md. Crucial for frontend integration and portfolio deployment security.
 
 ## Context
 - .gsd/SPEC.md
-- .gsd/ARCHITECTURE.md
-- backend/app/schemas/api.py (empty stub)
-- backend/app/services/analyzer.py (empty stub)
-- backend/app/core/llm_engine.py (Phase 2)
-- backend/app/core/vector_store.py (Phase 2)
-- backend/app/services/ccpa_knowledge.py (Phase 1)
-- backend/app/services/prompt_builder.py (Phase 2)
-- backend/app/core/response_parser.py (Phase 2)
+- backend/app/core/config.py (provides `settings.CORS_ORIGINS` and `settings.API_KEY`)
+- backend/app/main.py
 
 ## Tasks
 
 <task type="auto">
-  <name>Implement Pydantic schemas</name>
-  <files>backend/app/schemas/api.py</files>
+  <name>Configure CORS Middleware</name>
+  <files>backend/app/main.py</files>
   <action>
-    Create Pydantic models for the API contract:
+    Add `CORSMiddleware` to the FastAPI app:
+    1. Import `CORSMiddleware` from `fastapi.middleware.cors`
+    2. Import `settings` from `app.core.config`
+    3. Add the middleware to the `app` using `app.add_middleware(...)`
+    4. Set `allow_origins=settings.CORS_ORIGINS`
+    5. Set `allow_credentials=True`, `allow_methods=["*"]`, `allow_headers=["*"]`
 
-    1. `AnalyzeRequest`:
-       - `prompt: str` — the business practice description
-
-    2. `AnalyzeResponse`:
-       - `harmful: bool` — whether the practice violates CCPA
-       - `articles: list[str]` — list of violated sections (empty if not harmful)
-
-    Keep these minimal — they exist to validate request/response shape only.
-
-    AVOID: Do NOT add optional fields or default values to AnalyzeRequest.
-    AVOID: Do NOT add extra fields (no descriptions, no confidence scores).
+    AVOID: Don't hardcode origins, always use the settings object.
   </action>
-  <verify>cd backend && python -c "
-from app.schemas.api import AnalyzeRequest, AnalyzeResponse
-req = AnalyzeRequest(prompt='test')
-assert req.prompt == 'test'
-resp = AnalyzeResponse(harmful=True, articles=['Section 1798.120'])
-assert resp.harmful is True
-assert resp.articles == ['Section 1798.120']
-print('Schemas validated')
-"</verify>
-  <done>AnalyzeRequest and AnalyzeResponse Pydantic models validate correctly</done>
+  <verify>python -c "from app.main import app; assert any(m.cls.__name__ == 'CORSMiddleware' for m in app.user_middleware); print('OK')"</verify>
+  <done>CORS middleware is registered on the FastAPI app.</done>
 </task>
 
 <task type="auto">
-  <name>Implement analyzer service orchestration</name>
-  <files>backend/app/services/analyzer.py</files>
+  <name>Implement API Key Authentication</name>
+  <files>backend/app/main.py</files>
   <action>
-    Create an `Analyzer` class that orchestrates the full compliance analysis pipeline:
+    Implement `X-API-Key` header authentication:
+    1. Import `APIKeyHeader` and `Security` from `fastapi.security`. Import `status` and `Depends` from `fastapi`.
+    2. Instantiate the security scheme: `api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)`
+    3. Create a dependency function `async def get_api_key(api_key: str = Security(api_key_header)):`
+       - If `settings.API_KEY` is set AND `api_key != settings.API_KEY`, raise `HTTPException(status_code=403, detail="Invalid API Key")`
+       - If `settings.API_KEY` is empty, allow all traffic (useful for local dev).
+       - Return `api_key`
+    4. Protect the `analyze` endpoint by adding `api_key: str = Depends(get_api_key)` to its arguments.
+    5. Do NOT protect the `/health` endpoint.
 
-    1. `__init__()`: Store references to the singletons:
-       - `ccpa_kb` from services
-       - `vector_store` from core
-       - `llm_engine` from core
-       - `prompt_builder` from services
-
-    2. `analyze(prompt: str) -> dict`:
-       a. Use `vector_store.search(prompt, top_k=5)` to find relevant subsections
-       b. Use `ccpa_kb.get_parent_sections(subsection_ids)` to get full parent sections
-       c. Use `prompt_builder.build_prompt(prompt, parent_sections)` to construct the LLM prompt
-       d. Use `llm_engine.generate(full_prompt)` to run inference
-       e. Use `parse_response(raw_output)` to extract validated JSON
-       f. Return the parsed dict
-
-    3. Wrap the entire pipeline in a try/except — on ANY error, return the safe default:
-       `{"harmful": false, "articles": []}`
-
-    Create a module-level singleton: `analyzer = Analyzer()`
-
-    CRITICAL: Import `parse_response` from `app.core.response_parser`.
-    CRITICAL: The method must return a plain dict, not a Pydantic model.
+    AVOID: Don't fail if settings.API_KEY is an empty string — this allows local development without keys.
   </action>
-  <verify>cd backend && python -c "
-from app.services.analyzer import Analyzer
-a = Analyzer()
-print('Has analyze:', hasattr(a, 'analyze'))
-print('Analyzer instantiates without error')
-"</verify>
-  <done>Analyzer class instantiates and has analyze() method that orchestrates the full pipeline</done>
-</task>
-
-<task type="auto">
-  <name>Implement FastAPI main application</name>
-  <files>backend/app/main.py (NEW)</files>
-  <action>
-    Create the FastAPI application entry point:
-
-    1. `app = FastAPI(title="CCPA Compliance Analyzer")`
-
-    2. Startup event (`@app.on_event("startup")` or lifespan):
-       - Load the LLM engine: `llm_engine.load()`
-       - Build the vector index: `vector_store.build_index(ccpa_kb.get_all_subsections())`
-       - Log: "Server ready"
-
-    3. `GET /health`:
-       - Return HTTP 200 with `{"status": "healthy"}` when LLM and vector store are ready
-       - Return HTTP 503 if not ready
-
-    4. `POST /analyze`:
-       - Accept `AnalyzeRequest` body
-       - Call `analyzer.analyze(request.prompt)`
-       - Return `AnalyzeResponse` with the result
-       - On ANY exception → return `{"harmful": false, "articles": []}`
-
-    5. Global error handler:
-       - Catch all unhandled exceptions → return safe default JSON
-
-    CRITICAL: The /analyze endpoint must return ONLY the JSON schema, no wrapping.
-    CRITICAL: Use `response_model=AnalyzeResponse` to enforce Pydantic validation.
-    CRITICAL: Port 8000 is configured in startup.sh, not in main.py.
-    AVOID: Do NOT add CORS, authentication, or any middleware not needed.
-  </action>
-  <verify>cd backend && python -c "
-from app.main import app
-from fastapi.testclient import TestClient
-# Only verify the app object exists and has routes
-routes = [r.path for r in app.routes]
-print(f'Routes: {routes}')
-assert '/analyze' in routes, 'Missing /analyze route'
-assert '/health' in routes, 'Missing /health route'
-print('FastAPI app has correct routes')
-"</verify>
-  <done>FastAPI app has /analyze and /health routes, startup loads model and builds index</done>
+  <verify>
+    curl -s http://localhost:8000/health | grep healthy > /dev/null
+    echo "Health check is unauthenticated: OK"
+  </verify>
+  <done>The /analyze endpoint is protected by API key auth; /health is open.</done>
 </task>
 
 ## Success Criteria
-- [ ] Pydantic schemas validate request/response shape
-- [ ] Analyzer orchestrates: vector search → prompt → LLM → parse
-- [ ] FastAPI app has /analyze (POST) and /health (GET) endpoints
-- [ ] Startup event loads LLM and builds vector index
-- [ ] All errors caught → safe default JSON response
+- [ ] CORS middleware is visible in FastAPI app
+- [ ] Requests to `/analyze` without `X-API-Key` (when configured) return 403 Forbidden
+- [ ] Requests to `/health` always succeed
