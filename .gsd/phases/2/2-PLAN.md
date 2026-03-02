@@ -2,125 +2,90 @@
 phase: 2
 plan: 2
 wave: 2
+depends_on: ["2.1"]
+files_modified:
+  - backend/app/core/response_parser.py
+  - backend/app/services/analyzer.py
+  - backend/app/main.py
+autonomous: true
+
+must_haves:
+  truths:
+    - "Response parser validates explanation and referenced_articles"
+    - "Analyzer fallback returns the new 4-field safe default"
+    - "Main app fallback returns the new 4-field safe default"
+  artifacts:
+    - "response_parser.py SAFE_DEFAULT updated"
+    - "analyzer.py SAFE_DEFAULT updated"
+    - "main.py SAFE_DEFAULT updated"
 ---
 
-# Plan 2.2: Prompt Engineering & Response Parsing
+# Plan 2.2: Update Parser & Fallbacks
 
 ## Objective
-Build the prompt template with few-shot examples and CCPA context injection, plus the strict JSON response parser with confidence-based fallback to avoid the "zero marks" trap.
+Update the response parser to extract and validate the new fields, and update all `SAFE_DEFAULT` fallbacks across the app to match the new 4-field schema.
+
+Purpose: Ensures the pipeline doesn't break when Gemini returns the new fields, and guarantees the API always returns a valid schema even on failure.
 
 ## Context
 - .gsd/SPEC.md
-- .gsd/ARCHITECTURE.md
-- .gsd/DECISIONS.md (ADR-3, ADR-4)
-- backend/app/services/prompt_builder.py (empty stub)
-- backend/app/core/response_parser.py (empty stub)
-- backend/app/services/ccpa_knowledge.py (Phase 1)
+- backend/app/core/response_parser.py
+- backend/app/services/analyzer.py
+- backend/app/main.py
 
 ## Tasks
 
 <task type="auto">
-  <name>Implement prompt builder with few-shot examples</name>
-  <files>backend/app/services/prompt_builder.py</files>
+  <name>Update response_parser.py</name>
+  <files>backend/app/core/response_parser.py</files>
   <action>
-    Create a PromptBuilder class with a `build_prompt(user_query: str, context_sections: list[dict]) -> str` method.
+    1. Update `SAFE_DEFAULT`:
+       `{"harmful": False, "articles": [], "explanation": "Analysis failed or output was ambiguous. Falling back to safe default.", "referenced_articles": []}`
+    
+    2. Update `_validate_and_normalize(data)`:
+       - Extract `explanation` (default to "" if missing, ensure it's a string)
+       - Extract `referenced_articles` (default to [] if missing, ensure it's a list of strings)
+       - If `harmful=False`, clear `referenced_articles` to []
+       - Return dict with all 4 fields.
 
-    The prompt MUST follow this exact structure:
-    1. **System instruction**: "You are a CCPA Compliance Auditor. Analyze the following business practice against the provided CCPA statute sections. Output ONLY valid JSON with no additional text."
-    2. **Output format instruction**: Specify exact schema:
-       ```
-       {"harmful": true/false, "articles": ["Section 1798.xxx", ...]}
-       If not harmful, articles must be an empty list [].
-       ```
-    3. **Few-shot examples** (3 examples):
-       Example 1 (harmful): Selling data without opt-out → Section 1798.120
-       Example 2 (safe): Company provides clear privacy policy with opt-out → not harmful
-       Example 3 (harmful): Ignoring deletion requests → Section 1798.105
-    4. **Retrieved CCPA context**: The actual statute text from retrieved sections
-    5. **User query**: The business practice to analyze
-    6. **Output marker**: "JSON Output:"
-
-    For Llama 3.1 Instruct format, wrap in the chat template:
-    - Use `<|begin_of_text|><|start_header_id|>system<|end_header_id|>` for system message
-    - Use `<|start_header_id|>user<|end_header_id|>` for user message
-    - Use `<|start_header_id|>assistant<|end_header_id|>` for assistant response start
-
-    CRITICAL: The few-shot examples must use the EXACT output format expected: {"harmful": bool, "articles": [...]}
-    CRITICAL: Articles must use format "Section 1798.XXX" (with "Section" prefix)
-    AVOID: Do NOT include explanations in few-shot outputs — JSON only.
+    AVOID: Don't change the extraction strategies (regex, markdown, etc.)
   </action>
-  <verify>cd backend && python -c "
-from app.services.prompt_builder import PromptBuilder
-pb = PromptBuilder()
-prompt = pb.build_prompt('A company sells user data.', [{'section_id': '1798.120', 'title': 'Test', 'full_text': 'Test text'}])
-assert 'harmful' in prompt
-assert '1798.120' in prompt
-assert 'JSON' in prompt
-print(f'Prompt length: {len(prompt)} chars')
-print('PASS: Prompt contains required elements')
-"</verify>
-  <done>PromptBuilder generates Llama 3.1 chat-format prompt with system instruction, 3 few-shot examples, context sections, and user query</done>
+  <verify>python -c "from app.core.response_parser import parse_response; r = parse_response('{\"harmful\": false}'); assert 'explanation' in r; print('OK')"</verify>
+  <done>response_parser.py returns the 4-field dict and handles missing optional fields gracefully.</done>
 </task>
 
 <task type="auto">
-  <name>Implement strict JSON response parser with fallback</name>
-  <files>backend/app/core/response_parser.py</files>
+  <name>Update global fallbacks</name>
+  <files>backend/app/services/analyzer.py, backend/app/main.py</files>
   <action>
-    Create a `parse_response(raw_output: str) -> dict` function that:
-    1. Attempts to extract JSON from the LLM's raw output:
-       - Try direct `json.loads(raw_output.strip())`
-       - If that fails, search for JSON within markdown code fences: ```json...```
-       - If that fails, use regex to find `{...}` pattern in the text
-    2. Validates the extracted JSON:
-       - `harmful` must be a boolean (True/False)
-       - `articles` must be a list of strings
-       - If `harmful` is False, `articles` must be empty `[]`
-       - If `harmful` is True, `articles` must be non-empty
-    3. Normalizes article format:
-       - Ensure each article starts with "Section " prefix
-       - e.g., "1798.120" → "Section 1798.120"
-       - e.g., "Section 1798.120(a)" → "Section 1798.120(a)" (keep as-is)
-       - e.g., "Article 1798.120" → "Section 1798.120" (normalize prefix)
-    4. **Confidence fallback (ADR-4)**:
-       - If JSON parsing fails entirely → return `{"harmful": false, "articles": []}`
-       - If `harmful` is True but articles list is empty → return `{"harmful": false, "articles": []}`
-       - This is the "zero marks trap" defense: better to miss than to guess wrong
+    Update the `SAFE_DEFAULT` constants in both files to match the new schema.
+    
+    In `analyzer.py`:
+    `SAFE_DEFAULT = {"harmful": False, "articles": [], "explanation": "Pipeline failure.", "referenced_articles": []}`
 
-    CRITICAL: This function must NEVER raise an exception — always return valid JSON.
-    CRITICAL: Return a plain dict, not a Pydantic model (conversion happens at API layer).
+    In `main.py`:
+    `SAFE_DEFAULT = AnalyzeResponse(harmful=False, articles=[], explanation="API error.", referenced_articles=[])`
+    And update the `global_exception_handler` JSONResponse content to match.
   </action>
-  <verify>cd backend && python -c "
-from app.core.response_parser import parse_response
+  <verify>python -c "from app.main import SAFE_DEFAULT; assert hasattr(SAFE_DEFAULT, 'explanation'); print('OK')"</verify>
+  <done>All system fallbacks return the 4-field schema.</done>
+</task>
 
-# Test 1: Valid JSON
-r = parse_response('{\"harmful\": true, \"articles\": [\"Section 1798.120\"]}')
-assert r == {'harmful': True, 'articles': ['Section 1798.120']}, f'Test 1 failed: {r}'
-
-# Test 2: JSON in markdown fence
-r = parse_response('Here is the answer:\n\`\`\`json\n{\"harmful\": false, \"articles\": []}\n\`\`\`')
-assert r == {'harmful': False, 'articles': []}, f'Test 2 failed: {r}'
-
-# Test 3: Garbage input → fallback
-r = parse_response('I think this might violate something but I am not sure')
-assert r == {'harmful': False, 'articles': []}, f'Test 3 failed: {r}'
-
-# Test 4: harmful true but empty articles → fallback
-r = parse_response('{\"harmful\": true, \"articles\": []}')
-assert r == {'harmful': False, 'articles': []}, f'Test 4 failed: {r}'
-
-# Test 5: Normalize article format
-r = parse_response('{\"harmful\": true, \"articles\": [\"1798.120\"]}')
-assert r['articles'] == ['Section 1798.120'], f'Test 5 failed: {r}'
-
-print('All 5 parser tests passed')
-"</verify>
-  <done>parse_response() handles valid JSON, markdown fences, garbage input, and normalizes article prefixes. Fallback always returns safe default.</done>
+<task type="checkpoint:human-verify">
+  <name>Verify Rich Response E2E</name>
+  <files>none</files>
+  <action>
+    Start the server with `GEMINI_API_KEY` set.
+    Make a request to `/analyze`.
+    Verify the response contains: harmful, articles, explanation, referenced_articles.
+  </action>
+  <verify>
+    curl -s -X POST http://localhost:8000/analyze -H "Content-Type: application/json" -d '{"prompt": "We sell customer data without consent."}' | python -c "import sys,json; d=json.load(sys.stdin); assert 'explanation' in d; print(json.dumps(d, indent=2))"
+  </verify>
+  <done>Analyze endpoint successfully returns the new schema with explanations generated by Gemini.</done>
 </task>
 
 ## Success Criteria
-- [ ] PromptBuilder produces Llama 3.1 chat-format prompt with system instruction + 3 few-shot examples
-- [ ] Prompt includes retrieved CCPA context and user query
-- [ ] parse_response() extracts JSON from multiple output formats
-- [ ] parse_response() normalizes article format to "Section 1798.XXX"
-- [ ] Fallback returns `{"harmful": false, "articles": []}` on any error
-- [ ] All 5 parser unit tests pass
+- [ ] Safe defaults never cause schema validation errors
+- [ ] Parser handles missing `explanation` or `referenced_articles` without crashing
+- [ ] E2E request returns the rich 4-field response

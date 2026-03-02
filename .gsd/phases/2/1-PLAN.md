@@ -2,99 +2,77 @@
 phase: 2
 plan: 1
 wave: 1
+depends_on: []
+files_modified:
+  - backend/app/schemas/api.py
+  - backend/app/services/prompt_builder.py
+autonomous: true
+
+must_haves:
+  truths:
+    - "API schema AnalyzeResponse includes explanation and referenced_articles"
+    - "Prompt builder few-shot examples include the new fields"
+    - "System prompt instructs Gemini to generate explanation and referenced_articles"
+  artifacts:
+    - "api.py AnalyzeResponse has 4 fields"
+    - "prompt_builder.py SYSTEM_PROMPT is updated"
 ---
 
-# Plan 2.1: LLM Engine & Vector Store
+# Plan 2.1: Update API Schema & Prompt Builder
 
 ## Objective
-Implement the two core inference components: the quantized LLM engine for text generation and the ChromaDB vector store with bge-small-en-v1.5 embeddings for semantic search over CCPA subsections.
+Expand the `AnalyzeResponse` schema to include `explanation` and `referenced_articles`, and update the prompt builder to instruct Gemini to generate these new fields.
+
+Purpose: Delivers REQ-03 from SPEC.md. Provides rich context to the frontend so users understand *why* a practice is harmful and *where* to look in the statute.
 
 ## Context
 - .gsd/SPEC.md
-- .gsd/ARCHITECTURE.md
-- .gsd/DECISIONS.md (ADR-1, ADR-2, ADR-5)
-- backend/app/core/llm_engine.py (empty stub)
-- backend/app/services/ccpa_knowledge.py (implemented in Phase 1)
-- backend/requirements.txt
+- backend/app/schemas/api.py
+- backend/app/services/prompt_builder.py
 
 ## Tasks
 
 <task type="auto">
-  <name>Implement LLM engine with 4-bit quantization</name>
-  <files>backend/app/core/llm_engine.py</files>
+  <name>Expand AnalyzeResponse schema</name>
+  <files>backend/app/schemas/api.py</files>
   <action>
-    Create an LLMEngine class that:
-    1. Reads `HF_TOKEN` from `os.environ.get("HF_TOKEN")` — MUST NOT hardcode token
-    2. Loads `meta-llama/Llama-3.1-8B-Instruct` using transformers AutoModelForCausalLM
-       with bitsandbytes 4-bit quantization config:
-       - `load_in_4bit=True`
-       - `bnb_4bit_compute_dtype=torch.float16`
-       - `bnb_4bit_quant_type="nf4"`
-    3. Loads the matching tokenizer via AutoTokenizer
-    4. Exposes a `generate(prompt: str, max_new_tokens: int = 1024) -> str` method:
-       - Tokenize the prompt
-       - Run model.generate with `temperature=0.1`, `do_sample=True`, `top_p=0.9`
-       - Decode and return only the NEW tokens (exclude input tokens)
-    5. Exposes an `is_ready() -> bool` property to check if model is loaded
-    6. Handle model loading in a separate `load()` method (called during startup, not __init__)
+    Update `AnalyzeResponse`:
+    1. Keep `harmful: bool` and `articles: list[str]`
+    2. Add `explanation: str` (A clear, concise explanation of the analysis)
+    3. Add `referenced_articles: list[str]` (Specific excerpts or titles from the cited sections to provide context)
 
-    CRITICAL: Use `device_map="auto"` for automatic GPU/CPU placement.
-    CRITICAL: Pass `token=hf_token` to both from_pretrained calls.
-    AVOID: Do NOT use pipeline() — we need fine control over generation params.
-    AVOID: Do NOT import bitsandbytes directly — just use the BitsAndBytesConfig from transformers.
-    FALLBACK: If Llama fails to load (e.g., gated model), catch the error and try `mistralai/Mistral-7B-Instruct-v0.3` as backup.
+    Keep validation simple (just the types).
+
+    AVOID: Don't change AnalyzeRequest.
   </action>
-  <verify>cd backend && python -c "
-from app.core.llm_engine import LLMEngine
-engine = LLMEngine()
-print(f'Model name: {engine.model_name}')
-print(f'Ready before load: {engine.is_ready}')
-print('LLMEngine class instantiates without error')
-"</verify>
-  <done>LLMEngine class instantiates, has generate() method, load() method, and is_ready property. Token read from env var.</done>
+  <verify>python -c "from app.schemas.api import AnalyzeResponse; r = AnalyzeResponse(harmful=True, articles=[], explanation='test', referenced_articles=[]); assert hasattr(r, 'explanation'); print('OK')"</verify>
+  <done>AnalyzeResponse schema has 4 fields: harmful, articles, explanation, referenced_articles.</done>
 </task>
 
 <task type="auto">
-  <name>Implement ChromaDB vector store with bge-small embeddings</name>
-  <files>backend/app/core/vector_store.py (NEW)</files>
+  <name>Update PromptBuilder for new schema</name>
+  <files>backend/app/services/prompt_builder.py</files>
   <action>
-    Create a VectorStore class that:
-    1. Uses ChromaDB's in-memory client (`chromadb.Client()`)
-    2. Creates a collection named "ccpa_subsections"
-    3. Uses `sentence-transformers` to load `BAAI/bge-small-en-v1.5` as the embedding model
-       - Use SentenceTransformer directly, NOT chromadb's built-in embedding
-       - This gives us control over batching and the model instance
-    4. Exposes a `build_index(subsections: list[dict])` method:
-       - Takes the output of `ccpa_kb.get_all_subsections()`
-       - Embeds each subsection's "text" field
-       - Adds documents to ChromaDB with IDs and metadata (parent_section_id)
-    5. Exposes a `search(query: str, top_k: int = 5) -> list[dict]` method:
-       - Embeds the query using the same model
-       - Queries ChromaDB for nearest neighbors
-       - Returns list of dicts with: id, text, parent_section_id, distance
-    6. Exposes an `is_ready() -> bool` property
+    Update prompt_builder.py to generate the new 4-field JSON:
 
-    IMPORTANT: The embedding model (bge-small, ~130MB) is separate from the LLM.
-    It should be loaded on CPU to save GPU VRAM for the LLM.
-    Use `SentenceTransformer("BAAI/bge-small-en-v1.5", device="cpu")`
+    1. Update SYSTEM_PROMPT:
+       - Change output format instruction to: `{"harmful": true, "articles": ["Section 1798.xxx", ...], "explanation": "Why it violates...", "referenced_articles": ["Excerpt from statute..."]}`
+       - Add rules: `explanation` must be a clear human-readable string. `referenced_articles` must contain short quotes or titles from the cited sections to prove the violation.
+       - If harmful is false, `explanation` should explain why it complies, and `referenced_articles` should be empty `[]`.
 
-    AVOID: Do NOT use chromadb's default embedding function — we need our own model.
-    AVOID: Do NOT persist the collection to disk — in-memory is sufficient.
+    2. Update FEW_SHOT_EXAMPLES:
+       - Update all 3 examples to use the new JSON format.
+       - Example 1 (harmful): Add a clear explanation about selling data without opt-out.
+       - Example 2 (safe): Add a clear explanation about honoring privacy policies.
+       - Example 3 (harmful): Add a clear explanation about ignoring deletion requests.
+
+    AVOID: Don't change build_prompt() method signature or logic. Just the prompt strings.
   </action>
-  <verify>cd backend && python -c "
-from app.core.vector_store import VectorStore
-vs = VectorStore()
-print(f'Ready before build: {vs.is_ready}')
-print('VectorStore class instantiates without error')
-print('Has build_index:', hasattr(vs, 'build_index'))
-print('Has search:', hasattr(vs, 'search'))
-"</verify>
-  <done>VectorStore class instantiates, has build_index() and search() methods, uses bge-small-en-v1.5 on CPU</done>
+  <verify>python -c "from app.services.prompt_builder import SYSTEM_PROMPT; assert 'explanation' in SYSTEM_PROMPT; assert 'referenced_articles' in SYSTEM_PROMPT; print('OK')"</verify>
+  <done>prompt_builder.py instructs Gemini to return the 4-field JSON format.</done>
 </task>
 
 ## Success Criteria
-- [ ] LLMEngine loads Llama 3.1 8B with 4-bit quantization (or Mistral fallback)
-- [ ] LLMEngine.generate() returns decoded text (excluding input tokens)
-- [ ] HF_TOKEN read from environment only
-- [ ] VectorStore uses ChromaDB in-memory with bge-small-en-v1.5 on CPU
-- [ ] VectorStore.search() returns ranked results with parent_section_id
+- [ ] `api.py` AnalyzeResponse reflects the new 4-field structure
+- [ ] `prompt_builder.py` output format reflects the new 4-field structure
+- [ ] All few-shot examples are updated to 4 fields
