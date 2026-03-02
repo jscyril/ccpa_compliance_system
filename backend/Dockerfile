@@ -1,47 +1,35 @@
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+FROM python:3.13-slim
 
-# Prevent interactive prompts during build
-ENV DEBIAN_FRONTEND=noninteractive
+# Set environment variables for Python
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Install Python 3.11 and system dependencies
+# Install required system packages for building (e.g., ChromaDB)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
-    python3-pip \
     build-essential \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
     && rm -rf /var/lib/apt/lists/*
 
+# Set the working directory
 WORKDIR /app
 
-# Install Python dependencies first (layer caching)
+# Copy dependency file and install dependencies
+# Doing this before copying code caches the dependencies layer
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy the application code and scripts
 COPY app/ app/
 COPY scripts/ scripts/
 
-# Pre-generate CCPA sections JSON during build
+# Pre-generate CCPA sections JSON during the build process
 RUN python scripts/preprocess_ccpa.py
 
-# Pre-download embedding model during build (~130MB, cached in layer)
+# Pre-download the embedding model during build so it gets cached in the image layer
+# This avoids downloading the ~130MB model at runtime
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
 
-# HF_TOKEN for model access (build-time for pre-download, runtime for loading)
-ARG HF_TOKEN
-ENV HF_TOKEN=${HF_TOKEN}
-
-# Pre-download LLM model weights and tokenizer during build
-RUN if [ -n "$HF_TOKEN" ]; then \
-    python -c "from huggingface_hub import snapshot_download; snapshot_download('deepseek-ai/DeepSeek-R1-Distill-Llama-8B', token='${HF_TOKEN}', ignore_patterns=['*.msgpack', '*.h5', '*.ot', '*.onnx'])"; \
-    fi
-
-# Copy startup script
-COPY startup.sh .
-RUN chmod +x startup.sh
-
+# Expose the API port
 EXPOSE 8000
 
-CMD ["bash", "startup.sh"]
+# Run the FastAPI application using uvicorn
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
