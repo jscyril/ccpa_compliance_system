@@ -1,8 +1,6 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
-torch>=2.2
-transformers>=4.30
 chromadb>=0.5
 sentence-transformers>=2.7
-bitsandbytes>=0.43
-accelerate>=0.30
+google-generativeai>=0.8
+pydantic-settings>=2.0
