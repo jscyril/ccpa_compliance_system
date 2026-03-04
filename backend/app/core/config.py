@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Gemini API
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.0-flash"  # Options: "gemini-2.0-flash", "gemini-1.5-pro"
+    GEMINI_MODEL: str = "gemini-3-flash-preview"  # Options: "gemini-3-flash-preview", "gemini-2.0-flash", "gemini-1.5-pro"
 
     # API Authentication
     API_KEY: str = ""  # X-API-Key header value for frontend auth
