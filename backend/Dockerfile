@@ -31,5 +31,5 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 # Expose the API port
 EXPOSE 8000
 
-# Run the FastAPI application using uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the FastAPI application using uvicorn, listening on the dynamic port Render provides
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
