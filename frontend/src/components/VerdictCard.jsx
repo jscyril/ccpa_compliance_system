@@ -2,7 +2,7 @@ import React from 'react';
 import { CheckCircle, AlertTriangle, ExternalLink } from 'lucide-react';
 
 const VerdictCard = ({ verdict }) => {
-    const { harmful, articles } = verdict;
+    const { harmful, articles, referenced_articles } = verdict;
 
     return (
         <div className={`p-6 border-l-4 ${harmful ? 'border-[#F87171] bg-[#F87171]/5' : 'border-[#34D399] bg-[#34D399]/5'} bg-[#151515] relative overflow-hidden group`}>
@@ -38,6 +38,19 @@ const VerdictCard = ({ verdict }) => {
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {referenced_articles && referenced_articles.length > 0 && (
+                        <div className="space-y-2 mt-4 pt-4 border-t border-white/10">
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#F5F5F7]/30 italic">
+                                Statute Excerpts:
+                            </p>
+                            <ul className="text-xs text-[#F5F5F7]/60 space-y-2 list-disc pl-4 italic">
+                                {referenced_articles.map((ref, idx) => (
+                                    <li key={idx}>{ref}</li>
+                                ))}
+                            </ul>
                         </div>
                     )}
                 </div>

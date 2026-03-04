@@ -35,8 +35,8 @@ const Bubble = ({ msg, isStreaming }) => {
             <div className={`max-w-[80%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-4`}>
                 {/* Text Content */}
                 <div className={`px-5 py-4 text-sm leading-relaxed ${isUser
-                        ? 'bg-[#CBFB45] text-[#0D0D0D] font-bold'
-                        : 'bg-[#1A1A1A] text-[#F5F5F7]/80 border border-white/5'
+                    ? 'bg-[#CBFB45] text-[#0D0D0D] font-bold'
+                    : 'bg-[#1A1A1A] text-[#F5F5F7]/80 border border-white/5'
                     }`}>
                     {isUser ? (
                         <>
@@ -132,6 +132,7 @@ const AnalyzerChat = () => {
                                     verdict: {
                                         harmful: result.harmful,
                                         articles: result.articles ?? [],
+                                        referenced_articles: result.referenced_articles ?? [],
                                     },
                                 }
                                 : m

@@ -1,1 +1,0 @@
-# CCPA Compliance Analyzer
