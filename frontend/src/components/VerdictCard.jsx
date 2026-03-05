@@ -2,7 +2,7 @@ import React from 'react';
 import { CheckCircle, AlertTriangle, ExternalLink } from 'lucide-react';
 
 const VerdictCard = ({ verdict }) => {
-    const { harmful, articles, referenced_articles } = verdict;
+    const { harmful, articles, explanation, referenced_articles } = verdict;
 
     return (
         <div className={`p-6 border-l-4 ${harmful ? 'border-[#F87171] bg-[#F87171]/5' : 'border-[#34D399] bg-[#34D399]/5'} bg-[#151515] relative overflow-hidden group`}>
@@ -21,6 +21,13 @@ const VerdictCard = ({ verdict }) => {
                     <p className="text-xl font-black text-[#F5F5F7] uppercase tracking-tight mb-4">
                         {harmful ? 'Review Required' : 'Compliant'}
                     </p>
+
+                    {/* Explanation */}
+                    {explanation && (
+                        <p className="text-sm text-[#F5F5F7]/70 leading-relaxed mb-4">
+                            {explanation}
+                        </p>
+                    )}
 
                     {articles && articles.length > 0 && (
                         <div className="space-y-3">

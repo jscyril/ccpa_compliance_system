@@ -132,6 +132,7 @@ const AnalyzerChat = () => {
                                     verdict: {
                                         harmful: result.harmful,
                                         articles: result.articles ?? [],
+                                        explanation: result.explanation ?? '',
                                         referenced_articles: result.referenced_articles ?? [],
                                     },
                                 }
