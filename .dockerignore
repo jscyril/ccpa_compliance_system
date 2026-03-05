@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# GSD / Agent configs
+.gsd
+.agent
+.gemini
+adapters
+docs
+scripts
+GSD-STYLE.md
+PROJECT_RULES.md
+model_capabilities.yaml
+
+# Test files
+test.py
+test_results.json
+
+# Node modules (will be installed fresh in Docker)
+frontend/node_modules
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+.env
+
+# OS
+.DS_Store
