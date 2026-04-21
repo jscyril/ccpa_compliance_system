@@ -1,12 +1,33 @@
 #!/bin/bash
 set -e
 
-# Default to port 10000 (Render's default) if PORT is not set
-export PORT="${PORT:-10000}"
+# Default to port 8080 if PORT is not set
+export PORT="${PORT:-8080}"
 
 echo "=========================================="
 echo " CCPA Compliance Analyzer"
-echo " Starting on port $PORT"
+echo "=========================================="
+
+# ── Validate required configuration ──────────────────────────
+if [ -z "$GEMINI_API_KEY" ]; then
+    echo ""
+    echo "  [ERROR] GEMINI_API_KEY is not set!"
+    echo ""
+    echo "  You must provide your Google Gemini API key."
+    echo "  Get one at: https://aistudio.google.com/apikey"
+    echo ""
+    echo "  Usage:"
+    echo "    docker run -p 8080:8080 \\"
+    echo "      -e GEMINI_API_KEY=your_key_here \\"
+    echo "      -e GEMINI_MODEL=gemini-2.0-flash \\"
+    echo "      ccpa-compliance-analyzer:latest"
+    echo ""
+    exit 1
+fi
+
+echo "  Port:       $PORT"
+echo "  Model:      ${GEMINI_MODEL:-gemini-2.0-flash}"
+echo "  API Key:    ${GEMINI_API_KEY:0:8}...****"
 echo "=========================================="
 
 # Substitute the PORT variable into the nginx config template
